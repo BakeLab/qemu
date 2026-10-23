@@ -3765,11 +3765,15 @@ static void vfio_exitfn(PCIDevice *pdev)
 static void vfio_pci_reset(DeviceState *dev)
 {
     VFIOPCIDevice *vdev = VFIO_PCI_DEVICE(dev);
+    bool initial_reset;
 
     /* Do not reset the device during qemu_system_reset prior to cpr load */
     if (cpr_is_incoming()) {
         return;
     }
+
+    initial_reset = !vdev->initial_reset_seen;
+    vdev->initial_reset_seen = true;
 
     trace_vfio_pci_reset(vdev->vbasedev.name);
 
@@ -3777,6 +3781,24 @@ static void vfio_pci_reset(DeviceState *dev)
 
     if (vdev->display != ON_OFF_AUTO_OFF) {
         vfio_display_reset(vdev);
+    }
+
+    /*
+     * Experimental opt-in for comparing a single kernel open-time FLR with
+     * the usual open-time plus QEMU initial reset sequence. Keep the normal
+     * interrupt/config bookkeeping and every subsequent reset. This does
+     * not verify firmware health or replace device recovery.
+     *
+     * Restrict the experiment to the legacy VFIO backend: its reset_works
+     * flag reflects the kernel's successful open-time function reset.
+     * A pre-opened fd or a vendor-specific reset needs separate handling.
+     */
+    if (initial_reset && vdev->skip_initial_flr &&
+        vdev->vbasedev.reset_works && vdev->has_flr &&
+        !vdev->resetfn && vdev->vbasedev.group) {
+        warn_report("vfio %s: experimental initial FLR skipped; "
+                    "subsequent resets remain enabled", vdev->vbasedev.name);
+        goto post_reset;
     }
 
     if (vdev->resetfn && !vdev->resetfn(vdev)) {
@@ -3911,6 +3933,8 @@ static const Property vfio_pci_properties[] = {
     DEFINE_PROP_BOOL("x-no-kvm-msix", VFIOPCIDevice, no_kvm_msix, false),
     DEFINE_PROP_BOOL("x-no-geforce-quirks", VFIOPCIDevice,
                      no_geforce_quirks, false),
+    DEFINE_PROP_BOOL("x-skip-initial-flr", VFIOPCIDevice,
+                     skip_initial_flr, false),
     DEFINE_PROP_BOOL("x-no-kvm-ioeventfd", VFIOPCIDevice, no_kvm_ioeventfd,
                      false),
     DEFINE_PROP_BOOL("x-no-vfio-ioeventfd", VFIOPCIDevice, no_vfio_ioeventfd,
@@ -4016,6 +4040,10 @@ static void vfio_pci_class_init(ObjectClass *klass, const void *data)
                                           "x-no-geforce-quirks",
                                           "Disable GeForce quirks (for NVIDIA Quadro/GRID/Tesla). "
                                           "Improves performance");
+    object_class_property_set_description(klass,
+                                          "x-skip-initial-flr",
+                                          "Skip only the first QEMU FLR after a successful "
+                                          "legacy VFIO open reset (EXPERIMENTAL)");
     object_class_property_set_description(klass, /* 2.12 */
                                           "display",
                                           "Enable display support for device, ex. vGPU");
