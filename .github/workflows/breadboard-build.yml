@@ -37,7 +37,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang llvm lld ninja-build python3-venv python3-pip \
             pkg-config libglib2.0-dev libpixman-1-dev zlib1g-dev libfdt-dev \
-            liburing-dev libslirp-dev libusb-1.0-0-dev libnuma-dev
+            liburing-dev libusb-1.0-0-dev libnuma-dev
       - name: Configure Breadboard device profile
         run: |
           mkdir build
@@ -48,7 +48,7 @@ jobs:
             --without-default-devices \
             --with-devices-${{ matrix.profile }}=breadboard \
             --enable-kvm --enable-linux-io-uring --enable-libusb --enable-numa \
-            --enable-slirp --enable-vhost-kernel --enable-vhost-user --enable-tools \
+            --disable-slirp --enable-vhost-kernel --enable-vhost-user --enable-tools \
             --audio-drv-list= \
             --disable-alsa --disable-coreaudio --disable-jack --disable-oss \
             --disable-pa --disable-pipewire --disable-sndio \
