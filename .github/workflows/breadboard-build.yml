@@ -48,7 +48,8 @@ jobs:
             --without-default-devices \
             --with-devices-${{ matrix.profile }}=breadboard \
             --enable-kvm --enable-linux-io-uring --enable-libusb --enable-numa \
-            --disable-slirp --enable-vhost-kernel --enable-vhost-user --enable-tools \
+            --disable-linux-aio --disable-nitro --disable-slirp \
+            --enable-vhost-kernel --enable-vhost-user --enable-tools \
             --audio-drv-list= \
             --disable-alsa --disable-coreaudio --disable-jack --disable-oss \
             --disable-pa --disable-pipewire --disable-sndio \
