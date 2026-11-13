@@ -35,7 +35,8 @@ jobs:
       - name: Install QEMU build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang llvm lld ninja-build python3-venv python3-pip \
+          # QEMU's mkvenv bootstraps from vendored wheels; python3-venv provides ensurepip.
+          sudo apt-get install -y clang llvm lld ninja-build python3-venv \
             pkg-config libglib2.0-dev libpixman-1-dev zlib1g-dev libfdt-dev \
             liburing-dev libusb-1.0-0-dev libnuma-dev
       - name: Configure Breadboard device profile
