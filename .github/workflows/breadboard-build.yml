@@ -63,7 +63,7 @@ jobs:
       - name: Build and test
         run: |
           ninja -C build -j"$(nproc)"
-          meson test -C build --print-errorlogs
+          build/pyvenv/bin/meson test -C build --print-errorlogs
       - name: Package QEMU and runtime dependency manifest
         env:
           BB_QEMU_TAG: ${{ inputs.tag }}
@@ -76,6 +76,7 @@ jobs:
           install -m 0755 build/qemu-img "$stage/bin/"
           git rev-parse HEAD > "$stage/share/source-commit"
           printf '%s\n' "$BB_QEMU_TAG" > "$stage/share/source-tag"
+          build/pyvenv/bin/meson configure build > "$stage/share/build-options.txt"
           ldd "$stage/bin/qemu-system-${BB_QEMU_ARCH}" > "$stage/share/runtime-libraries.txt"
           ldd "$stage/bin/qemu-img" >> "$stage/share/runtime-libraries.txt"
           tar --sort=name --mtime='UTC 2020-01-01' --owner=0 --group=0 --numeric-owner \
