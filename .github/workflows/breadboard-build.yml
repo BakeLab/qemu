@@ -1,0 +1,97 @@
+name: Breadboard QEMU binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing, reviewed QEMU source tag to package (for example bb-qemu-11.1.3-1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-softmmu
+            runner: ubuntu-24.04
+            profile: x86_64
+          - arch: aarch64
+            target: aarch64-softmmu
+            runner: ubuntu-24.04-arm
+            profile: aarch64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - name: Install QEMU build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm lld ninja-build python3-venv python3-pip \
+            pkg-config libglib2.0-dev libpixman-1-dev zlib1g-dev libfdt-dev \
+            liburing-dev libslirp-dev libusb-1.0-0-dev libnuma-dev
+      - name: Configure Breadboard device profile
+        run: |
+          mkdir build
+          cd build
+          CC=clang CXX=clang++ ../configure \
+            --target-list=${{ matrix.target }} \
+            --without-default-devices \
+            --with-devices-${{ matrix.profile }}=breadboard \
+            --enable-kvm --enable-linux-io-uring --enable-libusb --enable-numa \
+            --enable-slirp --enable-vhost-kernel --enable-vhost-user --enable-tools \
+            --disable-docs --disable-werror
+      - name: Build and test
+        run: |
+          ninja -C build -j"$(nproc)"
+          meson test -C build --print-errorlogs
+      - name: Package QEMU and runtime dependency manifest
+        env:
+          BB_QEMU_TAG: ${{ inputs.tag }}
+          BB_QEMU_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          stage="$RUNNER_TEMP/breadboard-qemu"
+          mkdir -p "$stage/bin" "$stage/share"
+          install -m 0755 "build/qemu-system-${BB_QEMU_ARCH}" "$stage/bin/"
+          install -m 0755 build/qemu-img "$stage/bin/"
+          git rev-parse HEAD > "$stage/share/source-commit"
+          printf '%s\n' "$BB_QEMU_TAG" > "$stage/share/source-tag"
+          ldd "$stage/bin/qemu-system-${BB_QEMU_ARCH}" > "$stage/share/runtime-libraries.txt"
+          ldd "$stage/bin/qemu-img" >> "$stage/share/runtime-libraries.txt"
+          tar --sort=name --mtime='UTC 2020-01-01' --owner=0 --group=0 --numeric-owner \
+            -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/breadboard-qemu-${BB_QEMU_ARCH}.tar.gz" breadboard-qemu
+          sha256sum "$RUNNER_TEMP/breadboard-qemu-${BB_QEMU_ARCH}.tar.gz" \
+            > "$RUNNER_TEMP/breadboard-qemu-${BB_QEMU_ARCH}.tar.gz.sha256"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: breadboard-qemu-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/breadboard-qemu-${{ matrix.arch }}.tar.gz
+            ${{ runner.temp }}/breadboard-qemu-${{ matrix.arch }}.tar.gz.sha256
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: breadboard-qemu-*
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          fail_on_unmatched_files: true
+          files: dist/*
