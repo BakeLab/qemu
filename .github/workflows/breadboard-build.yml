@@ -42,12 +42,22 @@ jobs:
         run: |
           mkdir build
           cd build
+          # Breadboard runs headless guests; omit host audio/display stacks.
           CC=clang CXX=clang++ ../configure \
             --target-list=${{ matrix.target }} \
             --without-default-devices \
             --with-devices-${{ matrix.profile }}=breadboard \
             --enable-kvm --enable-linux-io-uring --enable-libusb --enable-numa \
             --enable-slirp --enable-vhost-kernel --enable-vhost-user --enable-tools \
+            --audio-drv-list= \
+            --disable-alsa --disable-coreaudio --disable-jack --disable-oss \
+            --disable-pa --disable-pipewire --disable-sndio \
+            --disable-curses --disable-dbus-display --disable-gtk \
+            --disable-opengl --disable-png --disable-qemu-vnc \
+            --disable-rutabaga-gfx --disable-sdl --disable-sdl-image \
+            --disable-spice --disable-spice-protocol --disable-vnc \
+            --disable-vnc-jpeg --disable-vnc-sasl --disable-virglrenderer \
+            --disable-vte \
             --disable-docs --disable-werror
       - name: Build and test
         run: |
