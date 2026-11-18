@@ -825,6 +825,8 @@ free_group_exit:
 
 static void vfio_group_put(VFIOGroup *group)
 {
+    int ret, saved_errno;
+
     if (!group || !QLIST_EMPTY(&group->device_list)) {
         return;
     }
@@ -837,7 +839,14 @@ static void vfio_group_put(VFIOGroup *group)
     QLIST_REMOVE(group, next);
     trace_vfio_group_put(group->fd);
     cpr_delete_fd("vfio_group", group->groupid);
-    close(group->fd);
+    saved_errno = errno;
+    trace_vfio_group_close(group->groupid, group->fd);
+    errno = saved_errno;
+    ret = close(group->fd);
+    saved_errno = errno;
+    trace_vfio_group_close_result(group->groupid, group->fd, ret,
+                                 ret < 0 ? saved_errno : 0);
+    errno = saved_errno;
     g_free(group);
 }
 
@@ -901,6 +910,8 @@ fail:
 
 static void vfio_device_put(VFIODevice *vbasedev)
 {
+    int ret, saved_errno;
+
     if (!vbasedev->group) {
         return;
     }
@@ -908,7 +919,14 @@ static void vfio_device_put(VFIODevice *vbasedev)
     vbasedev->group = NULL;
     trace_vfio_device_put(vbasedev->fd);
     cpr_delete_fd(vbasedev->name, 0);
-    close(vbasedev->fd);
+    saved_errno = errno;
+    trace_vfio_device_close(vbasedev->name, vbasedev->fd);
+    errno = saved_errno;
+    ret = close(vbasedev->fd);
+    saved_errno = errno;
+    trace_vfio_device_close_result(vbasedev->name, vbasedev->fd, ret,
+                                  ret < 0 ? saved_errno : 0);
+    errno = saved_errno;
 }
 
 static int vfio_device_get_groupid(VFIODevice *vbasedev, Error **errp)
@@ -1020,7 +1038,7 @@ static int vfio_legacy_pci_hot_reset(VFIODevice *vbasedev, bool single)
     struct vfio_pci_dependent_device *devices;
     struct vfio_pci_hot_reset *reset;
     int32_t *fds;
-    int ret, i, count;
+    int ret, i, count, saved_errno;
     bool multi = false;
 
     trace_vfio_pci_hot_reset(vdev->vbasedev.name, single ? "one" : "multi");
@@ -1124,14 +1142,24 @@ static int vfio_legacy_pci_hot_reset(VFIODevice *vbasedev, bool single)
     }
 
     /* Bus reset! */
+    saved_errno = errno;
+    trace_vfio_pci_hot_reset_ioctl(vdev->vbasedev.name, vdev->vbasedev.fd,
+                                   single);
+    errno = saved_errno;
     ret = ioctl(vdev->vbasedev.fd, VFIO_DEVICE_PCI_HOT_RESET, reset);
+    saved_errno = errno;
+    trace_vfio_pci_hot_reset_ioctl_result(vdev->vbasedev.name,
+                                          vdev->vbasedev.fd, ret,
+                                          ret < 0 ? saved_errno : 0);
+    errno = saved_errno;
     g_free(reset);
     if (ret) {
-        ret = -errno;
+        ret = -saved_errno;
     }
 
     trace_vfio_pci_hot_reset_result(vdev->vbasedev.name,
-                                    ret ? strerror(errno) : "Success");
+                                    ret ? strerror(saved_errno) : "Success");
+    errno = saved_errno;
 
 out:
     /* Re-enable INTx on affected devices */

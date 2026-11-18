@@ -36,6 +36,20 @@
 VFIODeviceList vfio_device_list =
     QLIST_HEAD_INITIALIZER(vfio_device_list);
 
+int vfio_device_reset_traced(VFIODevice *vbasedev, const char *reason)
+{
+    int ret, saved_errno = errno;
+
+    trace_vfio_device_reset_ioctl(vbasedev->name, vbasedev->fd, reason);
+    errno = saved_errno;
+    ret = ioctl(vbasedev->fd, VFIO_DEVICE_RESET);
+    saved_errno = errno;
+    trace_vfio_device_reset_ioctl_result(vbasedev->name, vbasedev->fd,
+                                        reason, ret, ret ? saved_errno : 0);
+    errno = saved_errno;
+    return ret;
+}
+
 /*
  * We want to differentiate hot reset of multiple in-use devices vs
  * hot reset of a single in-use device. VFIO_DEVICE_RESET will already
