@@ -1,19 +1,39 @@
 roms = []
 if unpack_edk2_blobs
-  fds = [
-    'edk2-aarch64-code.fd',
-    'edk2-arm-code.fd',
-    'edk2-arm-vars.fd',
-    'edk2-riscv-code.fd',
-    'edk2-riscv-vars.fd',
-    'edk2-i386-code.fd',
-    'edk2-i386-secure-code.fd',
-    'edk2-i386-vars.fd',
-    'edk2-x86_64-code.fd',
-    'edk2-x86_64-secure-code.fd',
-    'edk2-loongarch64-code.fd',
-    'edk2-loongarch64-vars.fd',
-  ]
+  # Install firmware only for the system targets that survived accelerator
+  # selection. Keep descriptors with their blobs so they cannot dangle.
+  fds = []
+  firmware_descriptors = []
+  if 'aarch64-softmmu' in target_dirs
+    fds += ['edk2-aarch64-code.fd']
+    firmware_descriptors += ['60-edk2-aarch64.json']
+  endif
+  if 'arm-softmmu' in target_dirs
+    fds += ['edk2-arm-code.fd']
+    firmware_descriptors += ['60-edk2-arm.json']
+  endif
+  if 'aarch64-softmmu' in target_dirs or 'arm-softmmu' in target_dirs
+    fds += ['edk2-arm-vars.fd']
+  endif
+  if 'i386-softmmu' in target_dirs
+    fds += ['edk2-i386-code.fd', 'edk2-i386-secure-code.fd']
+    firmware_descriptors += ['60-edk2-i386.json', '50-edk2-i386-secure.json']
+  endif
+  if 'x86_64-softmmu' in target_dirs
+    fds += ['edk2-x86_64-code.fd', 'edk2-x86_64-secure-code.fd']
+    firmware_descriptors += ['60-edk2-x86_64.json', '50-edk2-x86_64-secure.json']
+  endif
+  if 'i386-softmmu' in target_dirs or 'x86_64-softmmu' in target_dirs
+    fds += ['edk2-i386-vars.fd']
+  endif
+  if 'riscv64-softmmu' in target_dirs
+    fds += ['edk2-riscv-code.fd', 'edk2-riscv-vars.fd']
+    firmware_descriptors += ['60-edk2-riscv64.json']
+  endif
+  if 'loongarch64-softmmu' in target_dirs
+    fds += ['edk2-loongarch64-code.fd', 'edk2-loongarch64-vars.fd']
+    firmware_descriptors += ['60-edk2-loongarch64.json']
+  endif
 
   foreach f : fds
     roms += custom_target(f,
@@ -77,13 +97,17 @@ blobs = [
   'edk2-licenses.txt',
   'hppa-firmware.img',
   'hppa-firmware64.img',
-  'opensbi-riscv32-generic-fw_dynamic.bin',
-  'opensbi-riscv64-generic-fw_dynamic.bin',
   'npcm7xx_bootrom.bin',
   'npcm8xx_bootrom.bin',
   'vof.bin',
   'vof-nvram.bin',
 ]
+
+foreach arch : ['riscv32', 'riscv64']
+  if arch + '-softmmu' in target_dirs
+    blobs += ['opensbi-' + arch + '-generic-fw_dynamic.bin']
+  endif
+endforeach
 
 if get_option('install_blobs')
   install_data(blobs, install_dir: qemu_datadir, install_mode: 'rw-r--r--')

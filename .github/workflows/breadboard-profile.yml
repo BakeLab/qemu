@@ -1,0 +1,54 @@
+name: Breadboard KVM profile
+
+on:
+  pull_request:
+    branches: [trim]
+  push:
+    branches: [trim]
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang ninja-build python3-venv pkg-config \
+            libglib2.0-dev zlib1g-dev libfdt-dev liburing-dev \
+            libusb-1.0-0-dev libnuma-dev libseccomp-dev libzstd-dev
+      - name: Configure native Breadboard device profile
+        run: |
+          mkdir build
+          cd build
+          # Exercise the defaults used by BB's pinned-fork build, not explicit
+          # --disable flags that could conceal a regression in those defaults.
+          CC=clang CXX=clang++ ../configure \
+            --target-list=${{ matrix.arch }}-softmmu \
+            --without-default-devices --with-devices-${{ matrix.arch }}=breadboard \
+            --enable-kvm --enable-libusb --enable-numa --enable-seccomp --enable-zstd \
+            --enable-vhost-kernel --enable-vhost-user --enable-tools \
+            --disable-docs --disable-werror --disable-gtk --disable-sdl \
+            --disable-vnc --disable-slirp --disable-guest-agent
+      - name: Build and verify devices, dependencies, and disk tools
+        run: |
+          ninja -C build -j"$(nproc)" qemu-system-${{ matrix.arch }} qemu-img tests/unit/test-crypto-hash
+          python3 tests/breadboard/check-build.py build ${{ matrix.arch }}
+      - name: Verify firmware and descriptor install manifests
+        run: |
+          export PATH="$PWD/build/pyvenv/bin:$PATH"
+          python3 tests/breadboard/test-firmware.py
