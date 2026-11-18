@@ -43,31 +43,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          # Breadboard runs headless guests; omit host audio/display stacks.
-          CC=clang CXX=clang++ ../configure \
-            --target-list=${{ matrix.target }} \
-            --without-default-devices \
-            --with-devices-${{ matrix.profile }}=breadboard \
-            --enable-kvm --enable-linux-io-uring --enable-libusb --enable-numa \
-            --disable-linux-aio --disable-nitro --disable-slirp \
-            --disable-bochs --disable-cloop --disable-dmg --disable-qcow1 --disable-vdi \
-            --disable-vhdx --disable-vmdk --disable-vpc --disable-qed \
-            --disable-parallels --disable-vvfat \
-            --disable-curl --disable-libiscsi --disable-libnfs --disable-libssh \
-            --disable-rbd \
-            --enable-vhost-kernel --enable-vhost-user --enable-tools \
-            --disable-guest-agent --disable-vhost-user-blk-server \
-            --disable-replication --disable-colo-proxy --disable-l2tpv3 \
-            --audio-drv-list= \
-            --disable-alsa --disable-coreaudio --disable-jack --disable-oss \
-            --disable-pa --disable-pipewire --disable-sndio \
-            --disable-curses --disable-dbus-display --disable-gtk \
-            --disable-opengl --disable-png --disable-qemu-vnc \
-            --disable-rutabaga-gfx --disable-sdl --disable-sdl-image \
-            --disable-spice --disable-spice-protocol --disable-vnc \
-            --disable-vnc-jpeg --disable-vnc-sasl --disable-virglrenderer \
-            --disable-vte \
-            --disable-docs --disable-werror
+          CC=clang CXX=clang++ ../scripts/breadboard-configure
       - name: Build and test
         run: |
           ninja -C build -j"$(nproc)"

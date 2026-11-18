@@ -1,0 +1,29 @@
+#!/bin/sh
+set -eu
+src=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+arch=$(uname -m)
+# Breadboard runs headless guests; omit host audio/display stacks.
+exec "$src/configure" \
+  --target-list="$arch-softmmu" \
+  --without-default-devices \
+  --with-devices-"$arch"=breadboard \
+  --enable-kvm --enable-linux-io-uring --enable-libusb --enable-numa \
+  --disable-linux-aio --disable-nitro --disable-slirp \
+  --disable-bochs --disable-cloop --disable-dmg --disable-qcow1 --disable-vdi \
+  --disable-vhdx --disable-vmdk --disable-vpc --disable-qed \
+  --disable-parallels --disable-vvfat \
+  --disable-curl --disable-libiscsi --disable-libnfs --disable-libssh \
+  --disable-rbd \
+  --enable-vhost-kernel --enable-vhost-user --enable-tools \
+  --disable-guest-agent --disable-vhost-user-blk-server \
+  --disable-replication --disable-colo-proxy --disable-l2tpv3 \
+  --audio-drv-list= \
+  --disable-alsa --disable-coreaudio --disable-jack --disable-oss \
+  --disable-pa --disable-pipewire --disable-sndio \
+  --disable-curses --disable-dbus-display --disable-gtk \
+  --disable-opengl --disable-png --disable-qemu-vnc \
+  --disable-rutabaga-gfx --disable-sdl --disable-sdl-image \
+  --disable-spice --disable-spice-protocol --disable-vnc \
+  --disable-vnc-jpeg --disable-vnc-sasl --disable-virglrenderer \
+  --disable-vte \
+  --disable-docs --disable-werror "$@"
