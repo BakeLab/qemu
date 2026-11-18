@@ -385,3 +385,6 @@ option('rust', type: 'feature', value: 'disabled',
        description: 'Rust support')
 option('strict_rust_lints', type: 'boolean', value: false,
        description: 'Enable stricter set of Rust warnings')
+
+option('breadboard_runtime_library', type: 'boolean', value: false,
+       description: 'Link the Linux system emulator against a relocatable Breadboard runtime library')

@@ -4447,14 +4447,29 @@ foreach target : target_dirs
       exe_name += '-unsigned'
     endif
 
-    emulator = executable(exe_name, exe['sources'],
-               install: true,
-               c_args: c_args,
-               dependencies: arch_deps + exe['dependencies'],
-               objects: lib.extract_all_objects(recursive: true),
-               link_depends: [block_syms, qemu_syms],
-               link_args: link_args,
-               win_subsystem: exe['win_subsystem'])
+    if get_option('breadboard_runtime_library') and exe_name == 'qemu-system-' + target_name
+      assert(host_os == 'linux' and get_option('b_staticpic'), 'Breadboard runtime requires Linux PIC objects')
+      runtime_lib = shared_library('bb-' + exe_name, exe['sources'],
+                   c_args: c_args + ['-Dmain=bb_qemu_system_main'],
+                   dependencies: arch_deps + exe['dependencies'],
+                   objects: lib.extract_all_objects(recursive: true),
+                   link_depends: [block_syms, qemu_syms],
+                   link_args: link_args,
+                   install: true,
+                   install_dir: get_option('libdir'))
+      emulator = executable(exe_name, files('system/breadboard-main.c'),
+                   link_with: runtime_lib, install: true,
+                   install_rpath: '$ORIGIN/../lib')
+    else
+      emulator = executable(exe_name, exe['sources'],
+                 install: true,
+                 c_args: c_args,
+                 dependencies: arch_deps + exe['dependencies'],
+                 objects: lib.extract_all_objects(recursive: true),
+                 link_depends: [block_syms, qemu_syms],
+                 link_args: link_args,
+                 win_subsystem: exe['win_subsystem'])
+    endif
 
     if host_os == 'darwin'
       icon = 'pc-bios/qemu.rsrc'
