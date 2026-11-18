@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-src=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+src=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 arch=$(uname -m)
 # Breadboard runs headless guests; omit host audio/display stacks.
 exec "$src/configure" \

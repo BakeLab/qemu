@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Stage the relocatable native runtime from a Meson install prefix.
+set -euo pipefail
+prefix=${1:?expected installed QEMU prefix}
+dest=${2:?expected empty destination}
+arch=$(uname -m)
+mkdir -p "$dest"/{bin,lib,share}
+install -m755 "$prefix/bin/qemu-system-$arch" "$prefix/bin/qemu-img" "$dest/bin/"
+install -m755 "$prefix/lib/libbb-qemu-system-$arch.so" "$dest/lib/"
+cp -aL "$prefix/share/qemu" "$dest/share/"
+# ldd includes transitive dependencies. Keep the dynamic loader and glibc
+# components together on the host; give the private libraries their own RUNPATH.
+for binary in "$prefix/bin/qemu-system-$arch" "$prefix/bin/qemu-img" "$prefix/lib/libbb-qemu-system-$arch.so"; do
+  libs=$(ldd "$binary")
+  if [[ "$libs" == *"not found"* ]]; then echo "$libs" >&2; exit 1; fi
+  while read -r name path; do
+    case "$name" in
+      libbb-qemu-*|libc.so.*|libpthread.so.*|libdl.so.*|librt.so.*|libm.so.*|libresolv.so.*|libutil.so.*) continue ;;
+    esac
+    if [[ ! -e "$dest/lib/$name" ]]; then install -m755 "$path" "$dest/lib/$name"; fi
+  done < <(awk '$2 == "=>" && $3 ~ /^\// {print $1, $3}' <<< "$libs")
+done
+for binary in "$dest/bin/"*; do patchelf --set-rpath "\$ORIGIN/../lib" "$binary"; done
+for library in "$dest/lib/"*; do patchelf --set-rpath "\$ORIGIN" "$library"; done
+"$dest/bin/qemu-system-$arch" --version
+"$dest/bin/qemu-img" --version
+run_with=$("$dest/bin/qemu-system-$arch" -run-with help 2>&1 || true)
+[[ "$run_with" == *"user=<str>"* ]]

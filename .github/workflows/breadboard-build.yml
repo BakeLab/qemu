@@ -1,6 +1,13 @@
 name: Breadboard QEMU binaries
 
 on:
+  pull_request:
+    paths:
+      - meson.build
+      - meson_options.txt
+      - scripts/breadboard-*
+      - system/breadboard-main.c
+      - .github/workflows/breadboard-build.yml
   workflow_dispatch:
     inputs:
       tag:
@@ -30,20 +37,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ inputs.tag || github.sha }}
           persist-credentials: false
       - name: Install QEMU build dependencies
         run: |
           sudo apt-get update
           # QEMU's mkvenv bootstraps from vendored wheels; python3-venv provides ensurepip.
           sudo apt-get install -y clang llvm lld ninja-build python3-venv \
-            pkg-config libglib2.0-dev libpixman-1-dev zlib1g-dev libfdt-dev \
+            patchelf pkg-config libglib2.0-dev libpixman-1-dev zlib1g-dev libfdt-dev \
             liburing-dev libusb-1.0-0-dev libnuma-dev
       - name: Configure Breadboard device profile
         run: |
           mkdir build
           cd build
-          CC=clang CXX=clang++ ../scripts/breadboard-configure
+          CC=clang CXX=clang++ ../scripts/breadboard-configure --prefix=/bb --libdir=lib \
+            --disable-modules -Db_staticpic=true -Dbreadboard_runtime_library=true
       - name: Build and test
         run: |
           ninja -C build -j"$(nproc)"
@@ -55,9 +63,8 @@ jobs:
         run: |
           set -euo pipefail
           stage="$RUNNER_TEMP/breadboard-qemu"
-          mkdir -p "$stage/bin" "$stage/share"
-          install -m 0755 "build/qemu-system-${BB_QEMU_ARCH}" "$stage/bin/"
-          install -m 0755 build/qemu-img "$stage/bin/"
+          DESTDIR="$RUNNER_TEMP/install" build/pyvenv/bin/meson install -C build --no-rebuild
+          scripts/breadboard-stage-runtime "$RUNNER_TEMP/install/bb" "$stage"
           git rev-parse HEAD > "$stage/share/source-commit"
           printf '%s\n' "$BB_QEMU_TAG" > "$stage/share/source-tag"
           build/pyvenv/bin/meson configure build > "$stage/share/build-options.txt"
@@ -75,6 +82,7 @@ jobs:
             ${{ runner.temp }}/breadboard-qemu-${{ matrix.arch }}.tar.gz.sha256
 
   release:
+    if: github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-24.04
     permissions:
