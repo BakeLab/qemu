@@ -1,6 +1,8 @@
 # Breadboard runtime: ARM virt plus only the device models it uses.
 CONFIG_ARM_VIRT=y
 
+CONFIG_PCIE_PORT=y
+
 CONFIG_VIRTIO_PCI=y
 CONFIG_VIRTIO_BLK=y
 CONFIG_VIRTIO_NET=y
