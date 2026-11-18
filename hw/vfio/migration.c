@@ -222,7 +222,7 @@ int vfio_migration_set_state(VFIODevice *vbasedev,
     return 0;
 
 reset_device:
-    if (ioctl(vbasedev->fd, VFIO_DEVICE_RESET)) {
+    if (vfio_device_reset_traced(vbasedev, "migration-recovery")) {
         hw_error("%s: Failed resetting device, err: %s", vbasedev->name,
                  strerror(errno));
     }
