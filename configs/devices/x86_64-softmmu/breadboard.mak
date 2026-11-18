@@ -1,6 +1,8 @@
 # Breadboard runtime: q35 plus only the device models it uses.
 CONFIG_Q35=y
 
+CONFIG_PCIE_PORT=y
+
 CONFIG_VIRTIO_PCI=y
 CONFIG_VIRTIO_BLK=y
 CONFIG_VIRTIO_NET=y
