@@ -1,15 +1,19 @@
 roms = []
 if unpack_edk2_blobs
-  fds = [
-    'edk2-aarch64-code.fd',
-    'edk2-aarch64-vars.fd',
-    'edk2-riscv64-code.fd',
-    'edk2-riscv64-vars.fd',
-    'edk2-x86_64-code.fd',
-    'edk2-x86_64-secure-code.fd',
-    'edk2-loongarch64-code.fd',
-    'edk2-loongarch64-vars.fd',
-  ]
+  fds = []
+  firmware_descriptors = []
+  foreach arch : ['aarch64', 'riscv64', 'loongarch64', 'x86_64']
+    if arch + '-softmmu' in target_dirs
+      fds += ['edk2-' + arch + '-code.fd']
+      firmware_descriptors += ['60-edk2-' + arch + '.json']
+      if arch == 'x86_64'
+        fds += ['edk2-x86_64-secure-code.fd', 'edk2-i386-vars.fd']
+        firmware_descriptors += ['50-edk2-x86_64-secure.json']
+      else
+        fds += ['edk2-' + arch + '-vars.fd']
+      endif
+    endif
+  endforeach
 
   foreach f : fds
     roms += custom_target(f,
@@ -84,13 +88,17 @@ blobs = [
   'hexagon_booter_sa8797p_nsp0',
   'hexagon_loadlinux_sa8797p_nsp0',
   'hexagon-hypervisor-license.txt',
-  'opensbi-riscv32-generic-fw_dynamic.bin',
-  'opensbi-riscv64-generic-fw_dynamic.bin',
   'npcm7xx_bootrom.bin',
   'npcm8xx_bootrom.bin',
   'vof.bin',
   'vof-nvram.bin',
 ]
+
+foreach arch : ['riscv32', 'riscv64']
+  if arch + '-softmmu' in target_dirs
+    blobs += ['opensbi-' + arch + '-generic-fw_dynamic.bin']
+  endif
+endforeach
 
 if get_option('install_blobs')
   install_data(blobs, install_dir: qemu_datadir, install_mode: 'rw-r--r--')

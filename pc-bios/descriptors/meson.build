@@ -1,11 +1,5 @@
 if unpack_edk2_blobs and get_option('install_blobs')
-  foreach f: [
-    '50-edk2-x86_64-secure.json',
-    '60-edk2-aarch64.json',
-    '60-edk2-x86_64.json',
-    '60-edk2-loongarch64.json',
-    '60-edk2-riscv64.json'
-  ]
+  foreach f: firmware_descriptors
     configure_file(input: files(f),
                    output: f,
                    configuration: {'DATADIR': get_option('prefix') / qemu_datadir},
