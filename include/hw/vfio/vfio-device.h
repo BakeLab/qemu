@@ -148,6 +148,8 @@ bool vfio_device_irq_set_signaling(VFIODevice *vbasedev, int index, int subindex
                                    int action, int fd, Error **errp);
 
 void vfio_device_reset_handler(void *opaque);
+/* Preserve the ioctl return value and errno while tracing its origin. */
+int vfio_device_reset_traced(VFIODevice *vbasedev, const char *reason);
 bool vfio_device_is_mdev(VFIODevice *vbasedev);
 /**
  * vfio_device_dirty_pages_disabled: Check if device dirty tracking will be
