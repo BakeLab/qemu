@@ -1,0 +1,70 @@
+name: Breadboard QEMU baseline
+
+on:
+  push:
+    branches: [trim]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qemu-security-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install QEMU build dependencies
+        run: |
+          pacman -Sy --needed --noconfirm base-devel clang llvm lld ninja python \
+            pkgconf glib2 pixman zlib dtc liburing libusb numactl
+          if ! pkg-config --exists libpcre2-8; then
+            pacman -S --noconfirm pcre2
+          fi
+          pkg-config --cflags --libs glib-2.0
+      - name: Configure x86_64 QEMU with sanitizers and fuzzing
+        run: |
+          mkdir -p build
+          cd build
+          CC=clang CXX=clang++ ../configure \
+            --enable-tcg --target-list=x86_64-softmmu \
+            --enable-fuzzing --enable-asan --enable-ubsan \
+            --enable-linux-io-uring --enable-libusb --enable-numa --disable-slirp \
+            --disable-bochs --disable-cloop --disable-dmg --disable-qcow1 \
+            --disable-vdi --disable-vhdx --disable-vmdk --disable-vpc \
+            --disable-qed --disable-parallels --disable-vvfat \
+            --disable-curl --disable-libiscsi --disable-libnfs --disable-libssh \
+            --disable-rbd \
+            --disable-attr --disable-bzip2 --disable-cap-ng --disable-curses \
+            --disable-gcrypt --disable-gnutls --disable-linux-aio \
+            --disable-lzo --disable-snappy --disable-zstd \
+            --disable-werror --disable-docs
+      - name: Configure AArch64 QEMU with sanitizers
+        run: |
+          mkdir -p build-arm64
+          cd build-arm64
+          CC=clang CXX=clang++ ../configure \
+            --enable-tcg --target-list=aarch64-softmmu \
+            --enable-asan --enable-ubsan \
+            --enable-linux-io-uring --enable-libusb --enable-numa --disable-slirp \
+            --disable-bochs --disable-cloop --disable-dmg --disable-qcow1 \
+            --disable-vdi --disable-vhdx --disable-vmdk --disable-vpc \
+            --disable-qed --disable-parallels --disable-vvfat \
+            --disable-curl --disable-libiscsi --disable-libnfs --disable-libssh \
+            --disable-rbd \
+            --disable-attr --disable-bzip2 --disable-cap-ng --disable-curses \
+            --disable-gcrypt --disable-gnutls --disable-linux-aio \
+            --disable-lzo --disable-snappy --disable-zstd \
+            --disable-werror --disable-docs
+      - name: Build x86_64 QEMU and fuzzers
+        run: ninja -C build -j"$(nproc)"
+      - name: Build AArch64 QEMU
+        run: ninja -C build-arm64 -j"$(nproc)"
+      - name: Run x86_64 QEMU unit and qtest suites
+        run: python3 scripts/ci/qemu-meson-tests.py build
+      - name: Run AArch64 QEMU unit and qtest suites
+        run: python3 scripts/ci/qemu-meson-tests.py build-arm64
+      - name: Smoke-test Breadboard machines and devices
+        run: python3 scripts/ci/breadboard-qemu-smoke.py build build-arm64
+      - name: Smoke-test QEMU fuzz targets for Breadboard devices
+        run: python3 scripts/ci/breadboard-qemu-fuzz.py build
