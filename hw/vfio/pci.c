@@ -49,6 +49,7 @@
 #include "system/iommufd.h"
 #include "vfio-migration-internal.h"
 #include "vfio-helpers.h"
+#include "pci-reset-order.h"
 
 /* Protected by BQL */
 static AccelRouteChange vfio_route_change;
@@ -3767,6 +3768,28 @@ static void vfio_exitfn(PCIDevice *pdev)
     }
 }
 
+static int vfio_pci_try_function_reset(VFIOPCIDevice *vdev, bool initial,
+                                       bool pm)
+{
+    const char *reason;
+    int ret;
+
+    if (pm) {
+        reason = initial ? "pci-initial-pm" : "pci-reset-pm";
+    } else {
+        reason = initial ? "pci-initial" : "pci-reset";
+    }
+    ret = vfio_device_reset_traced(&vdev->vbasedev, reason);
+    if (!ret) {
+        if (pm) {
+            trace_vfio_pci_reset_pm(vdev->vbasedev.name);
+        } else {
+            trace_vfio_pci_reset_flr(vdev->vbasedev.name);
+        }
+    }
+    return ret;
+}
+
 static void vfio_pci_reset(DeviceState *dev)
 {
     VFIOPCIDevice *vdev = VFIO_PCI_DEVICE(dev);
@@ -3810,27 +3833,9 @@ static void vfio_pci_reset(DeviceState *dev)
         goto post_reset;
     }
 
-    if (vdev->vbasedev.reset_works &&
-        (vdev->has_flr || !vdev->has_pm_reset) &&
-        !vfio_device_reset_traced(&vdev->vbasedev,
-                                 initial_reset ? "pci-initial" : "pci-reset")) {
-        trace_vfio_pci_reset_flr(vdev->vbasedev.name);
-        goto post_reset;
-    }
-
-    /* See if we can do our own bus reset */
-    if (!vfio_pci_hot_reset_one(vdev)) {
-        goto post_reset;
-    }
-
-    /* If nothing else works and the device supports PM reset, use it */
-    if (vdev->vbasedev.reset_works && vdev->has_pm_reset &&
-        !vfio_device_reset_traced(&vdev->vbasedev,
-                                 initial_reset ? "pci-initial-pm" :
-                                                 "pci-reset-pm")) {
-        trace_vfio_pci_reset_pm(vdev->vbasedev.name);
-        goto post_reset;
-    }
+    vfio_pci_try_resets(vdev, vdev->vbasedev.reset_works, vdev->has_flr,
+                        vdev->has_pm_reset, initial_reset,
+                        vfio_pci_try_function_reset, vfio_pci_hot_reset_one);
 
 post_reset:
     vfio_pci_post_reset(vdev);
