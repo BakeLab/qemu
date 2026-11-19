@@ -3818,8 +3818,12 @@ static void vfio_pci_reset(DeviceState *dev)
         goto post_reset;
     }
 
-    /* If nothing else works and the device supports PM reset, use it */
-    if (vdev->vbasedev.reset_works && vdev->has_pm_reset &&
+    /*
+     * VFIO_DEVICE_RESET does not select a specific reset method. With FLR
+     * present we already issued this ioctl above, so repeating it here
+     * would retry the same kernel reset sequence, not request a PM reset.
+     */
+    if (vdev->vbasedev.reset_works && !vdev->has_flr && vdev->has_pm_reset &&
         !vfio_device_reset_traced(&vdev->vbasedev,
                                  initial_reset ? "pci-initial-pm" :
                                                  "pci-reset-pm")) {
