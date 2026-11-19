@@ -16,16 +16,34 @@ jobs:
       matrix:
         include:
           - arch: x86_64
-            runner: ubuntu-24.04
+            github_runner: ubuntu-24.04
+            bb_runner: x64
           - arch: aarch64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
+            github_runner: ubuntu-24.04-arm
+            bb_runner: arm64
+    runs-on: ${{ github.server_url == 'https://github.com' && matrix.github_runner || matrix.bb_runner }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Install build dependencies
+      - name: Install Arch Linux build dependencies on BB runners
+        if: github.server_url != 'https://github.com'
+        run: |
+          test -f /etc/arch-release
+          test "$(uname -m)" = "${{ matrix.arch }}"
+          root=()
+          if (( EUID != 0 )); then root=(sudo); fi
+          "${root[@]}" pacman -S --needed --noconfirm base-devel clang ninja python pkgconf \
+            linux-api-headers glib2 pixman zlib dtc liburing libusb numactl libseccomp zstd
+          # BB images can retain package records after pruning pkg-config files.
+          for pair in libpcre2-8:pcre2 libusb-1.0:libusb libzstd:zstd libseccomp:libseccomp; do
+            if ! pkg-config --exists "${pair%:*}"; then
+              "${root[@]}" pacman -S --noconfirm "${pair#*:}"
+            fi
+          done
+      - name: Install Ubuntu build dependencies on GitHub runners
+        if: github.server_url == 'https://github.com'
         run: |
           sudo apt-get update
           sudo apt-get install -y clang ninja-build python3-venv pkg-config \
@@ -63,7 +81,9 @@ jobs:
             --disable-modules
       - name: Build and verify devices, dependencies, and disk tools
         run: |
-          ninja -C build -j"$(nproc)" qemu-system-${{ matrix.arch }} qemu-img tests/unit/test-crypto-hash
+          ninja -C build -j"$(nproc)" qemu-system-${{ matrix.arch }} qemu-img \
+            tests/unit/test-crypto-hash tests/unit/test-vfio-pci-reset
+          build/tests/unit/test-vfio-pci-reset
           python3 tests/breadboard/check-build.py build ${{ matrix.arch }}
       - name: Verify firmware and descriptor install manifests
         run: |
