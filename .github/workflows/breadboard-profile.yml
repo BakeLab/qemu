@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [trim]
   push:
-    branches: [trim]
+    branches: [trim, preview/11.2-rc1]
 
 permissions:
   contents: read
