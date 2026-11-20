@@ -20,7 +20,8 @@ for device in ['VFIO_PCI', 'USB_XHCI_PCI', 'PCIE_PORT', 'VIRTIO_PCI',
     assert f'CONFIG_{device}=y' in config, device
 qemu = str(build / f'qemu-system-{arch}')
 accels = subprocess.check_output([qemu, '-accel', 'help'], text=True).splitlines()
-assert 'kvm' in accels and 'tcg' not in accels, accels
+names = {line.split()[0] for line in accels[1:] if line.split()}
+assert 'kvm' in names and 'tcg' not in names, accels
 help_text = subprocess.check_output([qemu, '-device', 'help'], text=True)
 for device in ['vfio-pci', 'qemu-xhci', 'usb-host', 'pcie-root-port',
                'virtio-blk-pci', 'virtio-net-pci', 'vhost-vsock-pci', 'vhost-user-fs-pci']:
