@@ -357,15 +357,19 @@ void tpm_util_show_buffer(const unsigned char *buffer,
     if (!trace_event_get_state_backends(TRACE_TPM_UTIL_SHOW_BUFFER_CONTENT)) {
         return;
     }
-    len = MIN(tpm_cmd_get_size(buffer), buffer_size);
+    len = buffer_size;
+    if (len >= endof(struct tpm_req_hdr, len)) {
+        len = MIN(tpm_cmd_get_size(buffer), buffer_size);
+    }
     trace_tpm_util_show_buffer_header(string, len);
 
+    str = g_string_new(NULL);
     for (i = 0; i < len; i += l) {
-        if (str) {
+        if (i) {
             g_string_append_c(str, '\n');
         }
-        l = MIN(len, 16);
-        str = qemu_hexdump_line(str, buffer, l, 1, 0);
+        l = MIN(len - i, 16);
+        qemu_hexdump_line(str, buffer + i, l, 1, 0);
     }
 
     g_string_ascii_up(str);
