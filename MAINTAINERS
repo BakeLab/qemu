@@ -2484,7 +2484,6 @@ M: Alex Williamson <alex@shazbot.org>
 M: Cédric Le Goater <clg@redhat.com>
 S: Supported
 F: hw/vfio/*
-F: util/vfio-helpers.c
 F: include/hw/vfio/
 F: docs/devel/vfio-mdpy.rst
 F: docs/devel/migration/vfio.rst

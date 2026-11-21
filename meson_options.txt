@@ -333,27 +333,27 @@ option('replication', type: 'feature', value: 'auto',
        description: 'replication support')
 option('colo_proxy', type: 'feature', value: 'auto',
        description: 'colo-proxy support')
-option('bochs', type: 'feature', value: 'auto',
+option('bochs', type: 'feature', value: 'disabled',
        description: 'bochs image format support')
-option('cloop', type: 'feature', value: 'auto',
+option('cloop', type: 'feature', value: 'disabled',
        description: 'cloop image format support')
-option('dmg', type: 'feature', value: 'auto',
+option('dmg', type: 'feature', value: 'disabled',
        description: 'dmg image format support')
-option('qcow1', type: 'feature', value: 'auto',
+option('qcow1', type: 'feature', value: 'disabled',
        description: 'qcow1 image format support')
-option('vdi', type: 'feature', value: 'auto',
+option('vdi', type: 'feature', value: 'disabled',
        description: 'vdi image format support')
-option('vhdx', type: 'feature', value: 'auto',
+option('vhdx', type: 'feature', value: 'disabled',
        description: 'vhdx image format support')
-option('vmdk', type: 'feature', value: 'auto',
+option('vmdk', type: 'feature', value: 'disabled',
        description: 'vmdk image format support')
-option('vpc', type: 'feature', value: 'auto',
+option('vpc', type: 'feature', value: 'disabled',
        description: 'vpc image format support')
-option('vvfat', type: 'feature', value: 'auto',
+option('vvfat', type: 'feature', value: 'disabled',
        description: 'vvfat image format support')
-option('qed', type: 'feature', value: 'auto',
+option('qed', type: 'feature', value: 'disabled',
        description: 'qed image format support')
-option('parallels', type: 'feature', value: 'auto',
+option('parallels', type: 'feature', value: 'disabled',
        description: 'parallels image format support')
 option('block_drv_whitelist_in_tools', type: 'boolean', value: false,
        description: 'use block whitelist also in tools instead of only QEMU')
