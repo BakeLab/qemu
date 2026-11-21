@@ -1,0 +1,56 @@
+name: Opengrep
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opengrep-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.4'
+      - name: Verify scanner isolation
+        run: bash scripts/ci/test-offline-scanner.sh
+      - name: Stage the pinned scanner and source snapshot
+        run: |
+          set -euo pipefail
+          umask 077
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            --connect-timeout 20 --max-time 180 --retry 2 \
+            https://github.com/opengrep/opengrep/releases/download/v2.0.0/opengrep_linux_x86 \
+            -o "$RUNNER_TEMP/opengrep"
+          echo "37e93f4da5fd04a18c5c1febbdd12f7e98dfccd4d0c9cf2593bcb25eeb462da0  $RUNNER_TEMP/opengrep" | sha256sum --check
+          mkdir "$RUNNER_TEMP/scan-input"
+          git archive HEAD -- .opengrep hw/vfio hw/virtio block | tar -C "$RUNNER_TEMP/scan-input" -xf -
+      - name: Test security rules offline
+        run: |
+          bash scripts/ci/offline-scanner.sh "$RUNNER_TEMP/opengrep" "$RUNNER_TEMP/scan-input" \
+            "$RUNNER_TEMP/opengrep-reports/rules" test --config .opengrep .opengrep/tests
+      - name: Scan VFIO, virtio and block code offline
+        run: |
+          bash scripts/ci/offline-scanner.sh "$RUNNER_TEMP/opengrep" "$RUNNER_TEMP/scan-input" \
+            "$RUNNER_TEMP/opengrep-reports/scan" scan --config .opengrep/rules.yml \
+            --strict --error --no-git-ignore \
+            --exclude '.opengrep/tests/**' \
+            --json-output /output/opengrep.json --sarif-output /output/opengrep.sarif .
+      - name: Retain private scan reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: opengrep
+          path: ${{ runner.temp }}/opengrep-reports/
+          retention-days: 7
+          if-no-files-found: error

@@ -1,0 +1,69 @@
+name: OpenSSF Scorecard
+
+on:
+  push:
+    branches: [trim]
+  schedule:
+    - cron: '37 3 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: scorecard-trim
+  cancel-in-progress: false
+
+jobs:
+  scorecard:
+    if: github.server_url == 'https://github.com' && github.ref == 'refs/heads/trim'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      statuses: read
+      issues: read
+      pull-requests: read
+      security-events: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.4'
+      - name: Build pinned Scorecard with repository-scoped fallback
+        run: scripts/ci/scorecard/build.sh "$RUNNER_TEMP/scorecard-tool"
+      - name: Audit the repository default branch
+        env:
+          # Optional repository-scoped token: read-only administration and existing audit scopes.
+          GITHUB_AUTH_TOKEN: ${{ secrets.SCORECARD_READ_TOKEN || github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Scorecard fetches repository metadata and the default branch itself.
+          # It does not build or execute the checked repository's code.
+          mkdir -p "$RUNNER_TEMP/scorecard-report"
+          "$RUNNER_TEMP/scorecard-tool/scorecard" \
+            --repo="github.com/$GITHUB_REPOSITORY" \
+            --format=json --show-details \
+            > "$RUNNER_TEMP/scorecard-report/scorecard.json"
+          jq -e '.checks | type == "array" and length > 0' \
+            "$RUNNER_TEMP/scorecard-report/scorecard.json" > /dev/null
+          {
+            echo '### OpenSSF Scorecard'
+            echo
+            echo 'Repository audit completed. See the private scorecard artifact for per-check findings and the scanned commit.'
+            echo 'Findings are advisory. Unavailable checks remain unknown; the read-only workflow token cannot inspect every administrative setting.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain private audit results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: scorecard
+          path: |
+            ${{ runner.temp }}/scorecard-report/scorecard.json
+            ${{ runner.temp }}/scorecard-tool/source.txt
+          retention-days: 7
+          if-no-files-found: warn
