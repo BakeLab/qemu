@@ -11,7 +11,9 @@ build = Path(sys.argv[1]).resolve()
 arch = sys.argv[2]
 options = {o['name']: o['value'] for o in json.loads(
     (build / 'meson-info/intro-buildoptions.json').read_text())}
-for feature in ['tcg', 'pixman', 'capstone', 'gio', 'bpf', 'gnutls', 'gcrypt', 'nettle']:
+for feature in ['tcg', 'pixman', 'capstone', 'gio', 'bpf', 'gnutls', 'gcrypt', 'nettle',
+                'bochs', 'cloop', 'dmg', 'qcow1', 'vdi', 'vhdx', 'vmdk', 'vpc',
+                'vvfat', 'qed', 'parallels']:
     assert options[feature] == 'disabled', (feature, options[feature])
 for feature in ['kvm', 'libusb', 'seccomp', 'zstd']:
     assert options[feature] == 'enabled', (feature, options[feature])
@@ -34,7 +36,7 @@ assert 'libglib-2.0' in libraries and 'libseccomp' in libraries, libraries
 
 # Keep the actual unencrypted qcow2/zstd path used by Breadboard functional.
 img = str(build / 'qemu-img')
-for protocol in ('nbd', 'nbd+tcp', 'nbd+unix'):
+for protocol in ('nbd', 'nbd+tcp', 'nbd+unix', 'nvme'):
     probe = subprocess.run([img, 'info', f'{protocol}://localhost/disk'],
                            capture_output=True, text=True, env={**os.environ, 'LC_ALL': 'C'})
     assert probe.returncode and 'Unknown protocol' in probe.stderr, probe.stderr

@@ -742,43 +742,6 @@ print a warning when ``fsync`` is not supported:
 With sufficiently new versions of libssh and OpenSSH, ``fsync`` is
 supported.
 
-NVMe disk images
-~~~~~~~~~~~~~~~~
-
-NVM Express (NVMe) storage controllers can be accessed directly by a userspace
-driver in QEMU.  This bypasses the host kernel file system and block layers
-while retaining QEMU block layer functionalities, such as block jobs, I/O
-throttling, image formats, etc.  Disk I/O performance is typically higher than
-with ``-drive file=/dev/sda`` using either thread pool or linux-aio.
-
-The controller will be exclusively used by the QEMU process once started. To be
-able to share storage between multiple VMs and other applications on the host,
-please use the file based protocols.
-
-Before starting QEMU, bind the host NVMe controller to the host vfio-pci
-driver.  For example:
-
-.. parsed-literal::
-
-  # modprobe vfio-pci
-  # lspci -n -s 0000:06:0d.0
-  06:0d.0 0401: 1102:0002 (rev 08)
-  # echo 0000:06:0d.0 > /sys/bus/pci/devices/0000:06:0d.0/driver/unbind
-  # echo 1102 0002 > /sys/bus/pci/drivers/vfio-pci/new_id
-
-  # |qemu_system| -drive file=nvme://HOST:BUS:SLOT.FUNC/NAMESPACE
-
-Alternative syntax using properties:
-
-.. parsed-literal::
-
-  |qemu_system| -drive file.driver=nvme,file.device=HOST:BUS:SLOT.FUNC,file.namespace=NAMESPACE
-
-*HOST*:*BUS*:*SLOT*.\ *FUNC* is the NVMe controller's PCI device
-address on the host.
-
-*NAMESPACE* is the NVMe namespace number, starting from 1.
-
 Disk image file locking
 ~~~~~~~~~~~~~~~~~~~~~~~
 
