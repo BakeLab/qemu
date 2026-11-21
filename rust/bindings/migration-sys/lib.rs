@@ -8,6 +8,7 @@
     non_upper_case_globals,
     unnecessary_transmutes,
     unsafe_op_in_unsafe_fn,
+    clippy::complexity,
     clippy::pedantic,
     clippy::restriction,
     clippy::style,
@@ -57,12 +58,7 @@ pub trait VMStateFlagsExt {
 }
 
 impl VMStateFlagsExt for VMStateFlags {
-    const VMS_VARRAY_FLAGS: VMStateFlags = VMStateFlags(
-        VMStateFlags::VMS_VARRAY_INT32.0
-            | VMStateFlags::VMS_VARRAY_UINT8.0
-            | VMStateFlags::VMS_VARRAY_UINT16.0
-            | VMStateFlags::VMS_VARRAY_UINT32.0,
-    );
+    const VMS_VARRAY_FLAGS: VMStateFlags = VMStateFlags(VMStateFlags::VMS_VARRAY.0);
 }
 
 // Add a couple builder-style methods to VMStateField, allowing

@@ -11,8 +11,7 @@
 //!   migration format for a struct.  This is based on the [`VMState`] trait,
 //!   which is defined by all migratable types.
 //!
-//! * [`impl_vmstate_forward`](crate::impl_vmstate_forward),
-//!   [`impl_vmstate_bitsized`](crate::impl_vmstate_bitsized), and
+//! * [`impl_vmstate_forward`](crate::impl_vmstate_forward) and
 //!   [`impl_vmstate_struct`](crate::impl_vmstate_struct), which help with the
 //!   definition of the [`VMState`] trait (respectively for transparent structs,
 //!   nested structs and `bilge`-defined types)
@@ -90,7 +89,7 @@ macro_rules! call_func_with_field {
 /// The contents of this trait go straight into structs that are parsed by C
 /// code and used to introspect into other structs.  Generally, you don't need
 /// to implement it except via macros that do it for you, such as
-/// `impl_vmstate_bitsized!`.
+/// `impl_vmstate_forward!`.
 pub unsafe trait VMState {
     /// The base contents of a `VMStateField` (minus the name and offset) for
     /// the type that is implementing the trait.
@@ -150,9 +149,8 @@ macro_rules! size_of_field_type {
 /// * an array of any of the above
 ///
 /// In order to support other types, the trait `VMState` must be implemented
-/// for them.  The macros [`impl_vmstate_forward`](crate::impl_vmstate_forward),
-/// [`impl_vmstate_bitsized`](crate::impl_vmstate_bitsized), and
-/// [`impl_vmstate_struct`](crate::impl_vmstate_struct) help with this.
+/// for them.  The macros [`impl_vmstate_forward`](crate::impl_vmstate_forward)
+/// and [`impl_vmstate_struct`](crate::impl_vmstate_struct) help with this.
 ///
 /// [`BqlCell`]: ../../bql/cell/struct.BqlCell.html
 /// [`BqlRefCell`]: ../../bql/cell/struct.BqlRefCell.html
@@ -231,41 +229,6 @@ impl_vmstate_transparent!(std::pin::Pin<T> where T: VMState);
 impl_vmstate_transparent!(common::Opaque<T> where T: VMState);
 impl_vmstate_transparent!(std::mem::ManuallyDrop<T> where T: VMState);
 
-#[macro_export]
-macro_rules! impl_vmstate_bitsized {
-    ($type:ty) => {
-        unsafe impl $crate::vmstate::VMState for $type {
-            const BASE: $crate::bindings::VMStateField =
-                                        <<<$type as ::bilge::prelude::Bitsized>::ArbitraryInt
-                                          as ::bilge::prelude::Number>::UnderlyingType
-                                         as $crate::vmstate::VMState>::BASE;
-            const VARRAY_FLAG: $crate::bindings::VMStateFlags =
-                                        <<<$type as ::bilge::prelude::Bitsized>::ArbitraryInt
-                                          as ::bilge::prelude::Number>::UnderlyingType
-                                         as $crate::vmstate::VMState>::VARRAY_FLAG;
-        }
-
-        impl $crate::migratable::ToMigrationState for $type {
-            type Migrated = <<$type as ::bilge::prelude::Bitsized>::ArbitraryInt
-                                          as ::bilge::prelude::Number>::UnderlyingType;
-
-            fn snapshot_migration_state(&self, target: &mut Self::Migrated) -> Result<(), $crate::InvalidError> {
-                *target = Self::Migrated::from(*self);
-                Ok(())
-            }
-
-            fn restore_migrated_state_mut(
-                &mut self,
-                source: Self::Migrated,
-                version_id: u8,
-            ) -> Result<(), $crate::InvalidError> {
-                *self = Self::from(source);
-                Ok(())
-            }
-        }
-    };
-}
-
 // Scalar types using predefined VMStateInfos
 
 macro_rules! impl_vmstate_scalar {
@@ -287,9 +250,9 @@ impl_vmstate_scalar!(vmstate_info_int8, i8);
 impl_vmstate_scalar!(vmstate_info_int16, i16);
 impl_vmstate_scalar!(vmstate_info_int32, i32);
 impl_vmstate_scalar!(vmstate_info_int64, i64);
-impl_vmstate_scalar!(vmstate_info_uint8, u8, VMS_VARRAY_UINT8);
-impl_vmstate_scalar!(vmstate_info_uint16, u16, VMS_VARRAY_UINT16);
-impl_vmstate_scalar!(vmstate_info_uint32, u32, VMS_VARRAY_UINT32);
+impl_vmstate_scalar!(vmstate_info_uint8, u8, VMS_VARRAY);
+impl_vmstate_scalar!(vmstate_info_uint16, u16, VMS_VARRAY);
+impl_vmstate_scalar!(vmstate_info_uint32, u32, VMS_VARRAY);
 impl_vmstate_scalar!(vmstate_info_uint64, u64);
 impl_vmstate_scalar!(vmstate_info_timer, util::timer::Timer);
 
@@ -418,7 +381,7 @@ macro_rules! vmstate_validate {
             field_exists: $crate::vmstate_exist_fn!($struct_name, $test_fn),
             flags: $crate::bindings::VMStateFlags(
                 $crate::bindings::VMStateFlags::VMS_MUST_EXIST.0
-                    | $crate::bindings::VMStateFlags::VMS_ARRAY.0,
+                    | $crate::bindings::VMStateFlags::VMS_NO_STATE.0,
             ),
             num: 0, // 0 elements: no data, only run test_fn callback
             ..::common::zeroable::Zeroable::ZERO

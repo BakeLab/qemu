@@ -141,6 +141,7 @@ if have_system
     'test-bufferiszero': [],
     'test-smp-parse': [qom, meson.project_source_root() / 'hw/core/machine-smp.c'],
     'test-vmstate': [migration, io],
+    'test-cpr': [migration, io, meson.project_source_root() / 'migration/cpr.c'],
     'test-yank': ['socket-helpers.c', qom, io, chardev],
     'test-ram-discard-manager': [
       'test-ram-discard-manager.c',
@@ -170,7 +171,7 @@ if have_system
   tests += {'test-qdev': [qom, hwcore]}
 endif
 
-if have_ga and host_os == 'linux'
+if have_ga and host_os in ['freebsd', 'linux']
   tests += {'test-qga': ['../qtest/libqmp.c', '../qtest/libqtest.c']}
   test_deps += {'test-qga': qga}
 endif
@@ -186,6 +187,12 @@ slow_tests = {
   'test-crypto-tlscredsx509': 90,
   'test-crypto-tlssession': 90,
   'test-replication': 60,
+  'rcutorture': 30,
+  'test-rcu-list': 30,
+  'test-rcu-simpleq': 30,
+  'test-rcu-tailq': 30,
+  'test-rcu-slist': 30,
+  'test-thread-pool': 30,
 }
 
 foreach test_name, extra: tests
@@ -207,5 +214,18 @@ foreach test_name, extra: tests
        protocol: 'tap',
        timeout: slow_tests.get(test_name, 30),
        priority: slow_tests.get(test_name, 30),
-       suite: ['unit'])
+       suite: ['unit'] +
+              (slow_tests.has_key(test_name) ? ['slow'] : []))
 endforeach
+
+# Multi targets test
+if multi_target_objects != []
+  test('test-multi-target',
+       executable('test-multi-target',
+                  sources: [multi_target_crates, files('test-multi-target.c')],
+                  dependencies: multi_target_deps,
+                  objects: multi_target_objects,
+                  link_depends: [block_syms, qemu_syms],
+                  link_args: multi_target_link_args),
+       suite: ['unit'])
+endif

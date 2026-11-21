@@ -48,6 +48,7 @@
 #include "qapi/error.h"
 #include "migration/vmstate.h"
 #include "monitor/monitor.h"
+#include "monitor/hmp.h"
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
 #include "qemu/module.h"
@@ -94,7 +95,6 @@ struct USBHostDevice {
     uint32_t                         iso_urb_frames;
     uint32_t                         options;
     uint32_t                         loglevel;
-    bool                             needs_autoscan;
     bool                             allow_one_guest_reset;
     bool                             allow_all_guest_resets;
     bool                             suppress_remote_wake;
@@ -187,6 +187,7 @@ static void usb_host_attach_kernel(USBHostDevice *s);
 # define HAVE_SUPER_PLUS 1
 #endif
 
+#ifdef CONFIG_HMP
 static const char *speed_name[] = {
     [LIBUSB_SPEED_UNKNOWN] = "?",
     [LIBUSB_SPEED_LOW]     = "1.5",
@@ -197,6 +198,7 @@ static const char *speed_name[] = {
     [LIBUSB_SPEED_SUPER_PLUS] = "5000+",
 #endif
 };
+#endif
 
 static const unsigned int speed_map[] = {
     [LIBUSB_SPEED_LOW]     = USB_SPEED_LOW,
@@ -1218,7 +1220,6 @@ static void usb_host_realize(USBDevice *udev, Error **errp)
 #if LIBUSB_API_VERSION >= 0x01000107 && !defined(CONFIG_WIN32)
     if (s->hostdevice) {
         int fd;
-        s->needs_autoscan = false;
         fd = qemu_open(s->hostdevice, O_RDWR, errp);
         if (fd < 0) {
             return;
@@ -1234,7 +1235,6 @@ static void usb_host_realize(USBDevice *udev, Error **errp)
         !s->match.vendor_id &&
         !s->match.product_id &&
         !s->match.port) {
-        s->needs_autoscan = false;
         ldev = usb_host_find_ref(s->match.bus_num,
                                  s->match.addr);
         if (!ldev) {
@@ -1249,14 +1249,13 @@ static void usb_host_realize(USBDevice *udev, Error **errp)
                        s->match.bus_num, s->match.addr);
             return;
         }
-    } else {
-        s->needs_autoscan = true;
-        QTAILQ_INSERT_TAIL(&hostdevs, s, next);
-        usb_host_auto_check(NULL);
     }
 
     s->exit.notify = usb_host_exit_notifier;
     qemu_add_exit_notifier(&s->exit);
+
+    QTAILQ_INSERT_TAIL(&hostdevs, s, next);
+    usb_host_auto_check(NULL);
 }
 
 static void usb_host_instance_init(Object *obj)
@@ -1274,9 +1273,7 @@ static void usb_host_unrealize(USBDevice *udev)
     USBHostDevice *s = USB_HOST_DEVICE(udev);
 
     qemu_remove_exit_notifier(&s->exit);
-    if (s->needs_autoscan) {
-        QTAILQ_REMOVE(&hostdevs, s, next);
-    }
+    QTAILQ_REMOVE(&hostdevs, s, next);
     usb_host_close(s);
     /*
      * Delete bottom halves after usb_host_close().  During close,
@@ -1842,6 +1839,7 @@ static const TypeInfo usb_host_dev_info = {
     .instance_size = sizeof(USBHostDevice),
     .class_init    = usb_host_class_initfn,
     .instance_init = usb_host_instance_init,
+    .secure        = true,
 };
 module_obj(TYPE_USB_HOST_DEVICE);
 module_kconfig(USB);
@@ -1849,7 +1847,9 @@ module_kconfig(USB);
 static void usb_host_register_types(void)
 {
     type_register_static(&usb_host_dev_info);
+#ifdef CONFIG_HMP
     monitor_register_hmp("usbhost", true, hmp_info_usbhost);
+#endif
 }
 
 type_init(usb_host_register_types)
@@ -1925,6 +1925,7 @@ static void usb_host_auto_check(void *unused)
                     s->errcount++;
                     continue;
                 }
+                s->errcount = 0;
                 break;
             }
         }
@@ -1954,7 +1955,8 @@ static void usb_host_auto_check(void *unused)
     timer_mod(usb_auto_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + 2000);
 }
 
-void hmp_info_usbhost(Monitor *mon, const QDict *qdict)
+#ifdef CONFIG_HMP
+void hmp_info_usbhost(MonitorHMP *hmp, const QDict *qdict)
 {
     libusb_device **devs = NULL;
     struct libusb_device_descriptor ddesc;
@@ -1974,14 +1976,14 @@ void hmp_info_usbhost(Monitor *mon, const QDict *qdict)
             continue;
         }
         usb_host_get_port(devs[i], port, sizeof(port));
-        monitor_printf(mon, "  Bus %d, Addr %d, Port %s, Speed %s Mb/s\n",
-                       libusb_get_bus_number(devs[i]),
-                       libusb_get_device_address(devs[i]),
-                       port,
-                       speed_name[libusb_get_device_speed(devs[i])]);
-        monitor_printf(mon, "    Class %02x:", ddesc.bDeviceClass);
-        monitor_printf(mon, " USB device %04x:%04x",
-                       ddesc.idVendor, ddesc.idProduct);
+        monitor_hmp_printf(hmp, "  Bus %d, Addr %d, Port %s, Speed %s Mb/s\n",
+                           libusb_get_bus_number(devs[i]),
+                           libusb_get_device_address(devs[i]),
+                           port,
+                           speed_name[libusb_get_device_speed(devs[i])]);
+        monitor_hmp_printf(hmp, "    Class %02x:", ddesc.bDeviceClass);
+        monitor_hmp_printf(hmp, " USB device %04x:%04x",
+                           ddesc.idVendor, ddesc.idProduct);
         if (ddesc.iProduct) {
             libusb_device_handle *handle;
             if (libusb_open(devs[i], &handle) == 0) {
@@ -1990,10 +1992,11 @@ void hmp_info_usbhost(Monitor *mon, const QDict *qdict)
                                                    ddesc.iProduct,
                                                    name, sizeof(name));
                 libusb_close(handle);
-                monitor_printf(mon, ", %s", name);
+                monitor_hmp_printf(hmp, ", %s", name);
             }
         }
-        monitor_printf(mon, "\n");
+        monitor_hmp_printf(hmp, "\n");
     }
     libusb_free_device_list(devs, 1);
 }
+#endif

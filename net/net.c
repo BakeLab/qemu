@@ -261,13 +261,14 @@ static ssize_t qemu_deliver_packet_iov(NetClientState *sender,
                                        int iovcnt,
                                        void *opaque);
 
-static void qemu_net_client_setup(NetClientState *nc,
-                                  NetClientInfo *info,
-                                  NetClientState *peer,
-                                  const char *model,
-                                  const char *name,
-                                  NetClientDestructor *destructor,
-                                  bool is_datapath)
+void qemu_net_client_setup(NetClientState *nc,
+                           NetClientInfo *info,
+                           NetClientState *peer,
+                           const char *model,
+                           const char *name,
+                           NetClientDestructor *destructor,
+                           bool is_datapath,
+                           bool do_not_pad)
 {
     nc->info = info;
     nc->model = g_strdup(model);
@@ -287,6 +288,7 @@ static void qemu_net_client_setup(NetClientState *nc,
     nc->incoming_queue = qemu_new_net_queue(qemu_deliver_packet_iov, nc);
     nc->destructor = destructor;
     nc->is_datapath = is_datapath;
+    nc->do_not_pad = do_not_pad;
     QTAILQ_INIT(&nc->filters);
 }
 
@@ -301,7 +303,7 @@ NetClientState *qemu_new_net_client(NetClientInfo *info,
 
     nc = g_malloc0(info->size);
     qemu_net_client_setup(nc, info, peer, model, name,
-                          qemu_net_client_destructor, true);
+                          qemu_net_client_destructor, true, true);
 
     return nc;
 }
@@ -317,7 +319,7 @@ NetClientState *qemu_new_net_control_client(NetClientInfo *info,
 
     nc = g_malloc0(info->size);
     qemu_net_client_setup(nc, info, peer, model, name,
-                          qemu_net_client_destructor, false);
+                          qemu_net_client_destructor, false, true);
 
     return nc;
 }
@@ -344,7 +346,7 @@ NICState *qemu_new_nic(NetClientInfo *info,
 
     for (i = 0; i < queues; i++) {
         qemu_net_client_setup(&nic->ncs[i], info, peers[i], model, name,
-                              NULL, true);
+                              NULL, true, false);
         nic->ncs[i].queue_index = i;
     }
 
@@ -512,6 +514,15 @@ bool qemu_has_ufo(NetClientState *nc)
     }
 
     return nc->info->has_ufo(nc);
+}
+
+int qemu_get_mtu(NetClientState *nc)
+{
+    if (!nc || !nc->info->get_mtu) {
+        return -1;
+    }
+
+    return nc->info->get_mtu(nc);
 }
 
 bool qemu_has_uso(NetClientState *nc)
@@ -733,6 +744,8 @@ static ssize_t qemu_send_packet_async_with_flags(NetClientState *sender,
 {
     NetQueue *queue;
     int ret;
+    uint8_t min_pkt[ETH_ZLEN];
+    size_t min_pktsz = sizeof(min_pkt);
 
 #ifdef DEBUG_NET
     printf("qemu_send_packet_async:\n");
@@ -741,6 +754,13 @@ static ssize_t qemu_send_packet_async_with_flags(NetClientState *sender,
 
     if (sender->link_down || !sender->peer) {
         return size;
+    }
+
+    if (net_peer_needs_padding(sender)) {
+        if (eth_pad_short_frame(min_pkt, &min_pktsz, buf, size)) {
+            buf = min_pkt;
+            size = min_pktsz;
+        }
     }
 
     /* Let filters handle the packet first */
@@ -895,6 +915,19 @@ ssize_t qemu_sendv_packet_async(NetClientState *sender,
 
     if (sender->link_down || !sender->peer) {
         return size;
+    }
+
+    if (net_peer_needs_padding(sender)) {
+        uint8_t min_pkt[ETH_ZLEN];
+        size_t min_pktsz = sizeof(min_pkt);
+
+        /*
+         * If we pad the packet, we get back a simple buffer, so handle
+         * it by sending it to the non-iov qemu_send_packet function
+         */
+        if (eth_pad_short_frame_iov(min_pkt, &min_pktsz, iov, iovcnt, size)) {
+            return qemu_send_packet_async(sender, min_pkt, min_pktsz, sent_cb);
+        }
     }
 
     /* Let filters handle the packet first */
@@ -1525,14 +1558,14 @@ void qmp_netdev_del(const char *id, Error **errp)
     }
 }
 
-static void netfilter_print_info(Monitor *mon, NetFilterState *nf)
+static char *netfilter_get_info_str(NetFilterState *nf)
 {
     char *str;
     ObjectProperty *prop;
     ObjectPropertyIterator iter;
     Visitor *v;
+    GString *buf = g_string_new(NULL);
 
-    /* generate info str */
     object_property_iter_init(&iter, OBJECT(nf));
     while ((prop = object_property_iter_next(&iter))) {
         if (!strcmp(prop->name, "type")) {
@@ -1542,29 +1575,69 @@ static void netfilter_print_info(Monitor *mon, NetFilterState *nf)
         object_property_get(OBJECT(nf), prop->name, v, NULL);
         visit_complete(v, &str);
         visit_free(v);
-        monitor_printf(mon, ",%s=%s", prop->name, str);
+        if (buf->len > 0) {
+            g_string_append_c(buf, ',');
+        }
+        g_string_append_printf(buf, "%s=%s", prop->name, str);
         g_free(str);
     }
-    monitor_printf(mon, "\n");
+
+    return g_string_free(buf, false);
 }
 
-void print_net_client(Monitor *mon, NetClientState *nc)
+static NetworkClientInfo *net_client_info_no_peer(NetClientState *nc)
 {
+    NetworkClientInfo *info = g_new0(NetworkClientInfo, 1);
     NetFilterState *nf;
 
-    monitor_printf(mon, "%s: index=%d,type=%s,%s\n", nc->name,
-                   nc->queue_index,
-                   NetClientDriver_str(nc->info->type),
-                   nc->info_str);
+    info->name = g_strdup(nc->name);
+    info->queue_index = nc->queue_index;
+    info->type = nc->info->type;
+    info->info_str = g_strdup(nc->info_str);
+
     if (!QTAILQ_EMPTY(&nc->filters)) {
-        monitor_printf(mon, "filters:\n");
+        NetFilterInfoList **ftail = &info->filters;
+        QTAILQ_FOREACH(nf, &nc->filters, next) {
+            NetFilterInfo *fi = g_new0(NetFilterInfo, 1);
+            fi->name = g_strdup(
+                object_get_canonical_path_component(OBJECT(nf)));
+            fi->type = g_strdup(object_get_typename(OBJECT(nf)));
+            fi->info = netfilter_get_info_str(nf);
+            QAPI_LIST_APPEND(ftail, fi);
+        }
     }
-    QTAILQ_FOREACH(nf, &nc->filters, next) {
-        monitor_printf(mon, "  - %s: type=%s",
-                       object_get_canonical_path_component(OBJECT(nf)),
-                       object_get_typename(OBJECT(nf)));
-        netfilter_print_info(mon, nf);
+
+    return info;
+}
+
+NetworkClientInfo *net_client_info(NetClientState *nc)
+{
+    NetworkClientInfo *info = net_client_info_no_peer(nc);
+
+    if (nc->peer) {
+        info->peer = net_client_info_no_peer(nc->peer);
     }
+
+    return info;
+}
+
+NetworkInfo *qmp_x_query_network(Error **errp)
+{
+    NetworkInfo *info = g_new0(NetworkInfo, 1);
+    NetworkClientInfoList **tail = &info->clients;
+    NetClientState *nc;
+
+    info->hubs = net_hub_query_info();
+
+    QTAILQ_FOREACH(nc, &net_clients, next) {
+        /* Skip if already gathered in hub info */
+        if (net_hub_id_for_client(nc, NULL) == 0) {
+            continue;
+        }
+        QAPI_LIST_APPEND(tail, net_client_info(nc));
+    }
+
+    return info;
 }
 
 RxFilterInfoList *qmp_query_rx_filter(const char *name, Error **errp)

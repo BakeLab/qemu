@@ -21,8 +21,8 @@ QA output created by file-io-error
       }}
 {"return": {}}
 
+qemu-io: write failed: Input/output error
 qemu-io: Failed flush for 'TEST_DIR/fuse-export' during close: Input/output error
-write failed: Input/output error
 
 {'execute': 'block-export-del',
       'arguments': {'id': 'exp0'}}

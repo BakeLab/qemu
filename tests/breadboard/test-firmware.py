@@ -81,14 +81,14 @@ subdir('pc-bios')
 
     def test_native_arm(self):
         fds, names = self.manifests(['aarch64-softmmu'])
-        self.assertEqual(fds, {'edk2-aarch64-code.fd', 'edk2-arm-vars.fd'})
+        self.assertEqual(fds, {'edk2-aarch64-code.fd', 'edk2-aarch64-vars.fd'})
         self.assertFalse(any('riscv' in n or 'loongarch' in n or 'edk2-i386' in n
                              or 'edk2-x86_64' in n for n in names))
 
     def test_explicit_riscv_and_loongarch(self):
         fds, names = self.manifests(['riscv32-softmmu', 'riscv64-softmmu',
                                     'loongarch64-softmmu'])
-        self.assertEqual(fds, {'edk2-riscv-code.fd', 'edk2-riscv-vars.fd',
+        self.assertEqual(fds, {'edk2-riscv64-code.fd', 'edk2-riscv64-vars.fd',
                                'edk2-loongarch64-code.fd', 'edk2-loongarch64-vars.fd'})
         self.assertIn('opensbi-riscv32-generic-fw_dynamic.bin', names)
         self.assertIn('opensbi-riscv64-generic-fw_dynamic.bin', names)
@@ -96,7 +96,7 @@ subdir('pc-bios')
     def test_combined_native_targets_share_no_duplicate_vars(self):
         fds, _ = self.manifests(['i386-softmmu', 'x86_64-softmmu',
                                  'arm-softmmu', 'aarch64-softmmu'])
-        self.assertEqual(len(fds), 8)
+        self.assertEqual(len(fds), 5)
 
     def test_tools_only(self):
         fds, names = self.manifests([])

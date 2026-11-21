@@ -41,9 +41,11 @@
 extern bool mshv_allowed;
 #define mshv_enabled() (mshv_allowed)
 #define mshv_msi_via_irqfd_enabled() mshv_enabled()
+#define mshv_irqchip_in_kernel() mshv_enabled()
 #else /* CONFIG_MSHV_IS_POSSIBLE */
 #define mshv_enabled() false
 #define mshv_msi_via_irqfd_enabled() mshv_enabled()
+#define mshv_irqchip_in_kernel() mshv_enabled()
 #endif
 
 #define TYPE_MSHV_ACCEL ACCEL_CLASS_NAME("mshv")
@@ -54,6 +56,11 @@ DECLARE_INSTANCE_CHECKER(MshvState, MSHV_STATE,
                          TYPE_MSHV_ACCEL)
 
 extern MshvState *mshv_state;
+
+/* clock (partition reference time) */
+int mshv_clock_init(int vm_fd);
+int mshv_clock_prepare_resume(int vm_fd);
+int mshv_clock_finish_resume(int vm_fd);
 
 /* interrupt */
 int mshv_request_interrupt(MshvState *mshv_state, uint32_t interrupt_type, uint32_t vector,

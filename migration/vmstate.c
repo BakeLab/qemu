@@ -110,27 +110,36 @@ static uint64_t vmstate_read_from_offset(const VMStateStructMember *member,
 
 static uint64_t vmstate_n_elems(void *opaque, const VMStateField *field)
 {
-    uint64_t n_elems = 1;
+    uint64_t n_elems;
 
     if (field->flags & VMS_ARRAY) {
         n_elems = field->num;
-    } else if (field->flags & (VMS_VARRAY_INT32 | VMS_VARRAY_UINT32
-                               | VMS_VARRAY_UINT16 | VMS_VARRAY_UINT8)) {
+    } else if (field->flags & VMS_VARRAY) {
         n_elems = vmstate_read_from_offset(&field->num_indirect, opaque);
+    } else if (field->flags & VMS_MUST_EXIST && field->flags & VMS_NO_STATE) {
+        n_elems = 0;
+    } else {
+        n_elems = 1;
     }
 
     trace_vmstate_n_elems(field->name, n_elems);
     return n_elems;
 }
 
-static uint64_t vmstate_size(void *opaque, const VMStateField *field)
+static bool vmstate_size(void *opaque, const VMStateField *field,
+                         uint64_t *sz, Error **errp)
 {
     uint64_t size;
 
+    *sz = 0;
+
     if (field->flags & VMS_VBUFFER) {
         size = vmstate_read_from_offset(&field->size_indirect, opaque);
-        if (field->flags & VMS_MULTIPLY) {
-            size *= field->size;
+        if ((field->flags & VMS_MULTIPLY) &&
+            umul64_overflow(size, field->size, &size)) {
+            error_setg(errp, "%s: VMState field '%s' multiply overflow",
+                       __func__, field->name);
+            return false;
         }
     } else if (field->flags & VMS_ARRAY_OF_POINTER) {
         /*
@@ -142,19 +151,32 @@ static uint64_t vmstate_size(void *opaque, const VMStateField *field)
         size = field->size;
     }
 
-    return size;
+    *sz = size;
+    return true;
 }
 
-static void vmstate_handle_alloc(void *ptr, const VMStateField *field,
-                                 void *opaque)
+static bool vmstate_handle_alloc(void *ptr, const VMStateField *field,
+                                 uint64_t n, uint64_t size, Error **errp)
 {
+    void *p;
+
     if (field->flags & VMS_POINTER && field->flags & VMS_ALLOC) {
-        uint64_t size = vmstate_size(opaque, field);
-        size *= vmstate_n_elems(opaque, field);
-        if (size) {
-            *(void **)ptr = g_malloc(size);
-        }
+        if (size && n) {
+            if (umul64_overflow(size, n, &size)) {
+                error_setg(errp, "%s: field '%s' multiply overflow",
+                           __func__, field->name);
+                return false;
+            }
+            p = g_try_malloc(size);
+            if (!p) {
+                error_setg(errp, "%s: Could not allocate memory for field '%s'",
+                           __func__, field->name);
+                return false;
+            }
+            *(void **)ptr = p;
+         }
     }
+    return true;
 }
 
 static bool vmstate_ptr_marker_load(QEMUFile *f, bool *load_field,
@@ -362,9 +384,15 @@ bool vmstate_load_vmsd(QEMUFile *f, const VMStateDescription *vmsd,
             void *first_elem = opaque + field->offset;
             int i;
             uint64_t n_elems = vmstate_n_elems(opaque, field);
-            uint64_t size = vmstate_size(opaque, field);
+            uint64_t size;
 
-            vmstate_handle_alloc(first_elem, field, opaque);
+            if (!vmstate_size(opaque, field, &size, errp)) {
+                return false;
+            }
+
+            if (!vmstate_handle_alloc(first_elem, field, n_elems, size, errp)) {
+                return false;
+            }
             if (field->flags & VMS_POINTER) {
                 first_elem = *(void **)first_elem;
                 assert(first_elem || !n_elems || !size);
@@ -678,15 +706,20 @@ static bool vmstate_save_vmsd_v(QEMUFile *f, const VMStateDescription *vmsd,
             void *first_elem = opaque + field->offset;
             int i;
             uint64_t n_elems = vmstate_n_elems(opaque, field);
-            uint64_t size = vmstate_size(opaque, field);
+            uint64_t size;
             JSONWriter *vmdesc_loop = vmdesc;
             bool is_prev_null = false;
+
             /*
              * When this is enabled, it means we will always push a ptr
              * marker first for each element saying if it's populated.
              */
             bool use_dynamic_array =
                 field->flags & VMS_ARRAY_OF_POINTER_AUTO_ALLOC;
+
+            if (!vmstate_size(opaque, field, &size, errp)) {
+                return false;
+            }
 
             trace_vmstate_save_state_loop(vmsd->name, field->name, n_elems);
             if (field->flags & VMS_POINTER) {

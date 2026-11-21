@@ -534,6 +534,20 @@ static uint64_t do_constant_folding_2(TCGOpcode op, TCGType type,
     case INDEX_op_bswap64:
         return bswap64(x);
 
+    case INDEX_op_revbit8:
+        /* Note the host-utils.h revbit8 operates on uint8_t. */
+        if (type == TCG_TYPE_I32) {
+            return bswap32(revbit32(x));
+        }
+        return bswap64(revbit64(x));
+
+    case INDEX_op_revbit32:
+        x = revbit32(x);
+        return y & TCG_BSWAP_OS ? (int32_t)x : x;
+
+    case INDEX_op_revbit64:
+        return revbit64(x);
+
     case INDEX_op_ext_i32_i64:
         return (int32_t)x;
 
@@ -582,6 +596,30 @@ static uint64_t do_constant_folding_2(TCGOpcode op, TCGType type,
             return (uint32_t)x % ((uint32_t)y ? : 1);
         }
         return (uint64_t)x % ((uint64_t)y ? : 1);
+
+    case INDEX_op_smax:
+        if (type == TCG_TYPE_I32) {
+            return MAX((int32_t)x, (int32_t)y);
+        }
+        return MAX((int64_t)x, (int64_t)y);
+
+    case INDEX_op_smin:
+        if (type == TCG_TYPE_I32) {
+            return MIN((int32_t)x, (int32_t)y);
+        }
+        return MIN((int64_t)x, (int64_t)y);
+
+    case INDEX_op_umax:
+        if (type == TCG_TYPE_I32) {
+            return MAX((uint32_t)x, (uint32_t)y);
+        }
+        return MAX((uint64_t)x, (uint64_t)y);
+
+    case INDEX_op_umin:
+        if (type == TCG_TYPE_I32) {
+            return MIN((uint32_t)x, (uint32_t)y);
+        }
+        return MIN((uint64_t)x, (uint64_t)y);
 
     default:
         g_assert_not_reached();
@@ -1483,7 +1521,26 @@ static bool fold_bswap(OptContext *ctx, TCGOp *op)
 {
     uint64_t z_mask, o_mask, s_mask;
     TempOptInfo *t1 = arg_info(op->args[1]);
-    int flags = op->args[2];
+    int flags = 0;
+
+    switch (op->opc) {
+    case INDEX_op_bswap16:
+        flags = op->args[2];
+        s_mask = INT16_MIN;
+        break;
+    case INDEX_op_bswap32:
+    case INDEX_op_revbit32:
+        flags = op->args[2];
+        s_mask = INT32_MIN;
+        break;
+    case INDEX_op_bswap64:
+    case INDEX_op_revbit8:
+    case INDEX_op_revbit64:
+        s_mask = 0;
+        break;
+    default:
+        g_assert_not_reached();
+    }
 
     if (ti_is_const(t1)) {
         return tcg_opt_gen_movi(ctx, op, op->args[0],
@@ -1491,39 +1548,16 @@ static bool fold_bswap(OptContext *ctx, TCGOp *op)
                                                     ti_const_val(t1), flags));
     }
 
-    z_mask = t1->z_mask;
-    o_mask = t1->o_mask;
-    s_mask = 0;
+    z_mask = do_constant_folding(op->opc, ctx->type, t1->z_mask, flags);
+    o_mask = do_constant_folding(op->opc, ctx->type, t1->o_mask, flags);
 
-    switch (op->opc) {
-    case INDEX_op_bswap16:
-        z_mask = bswap16(z_mask);
-        o_mask = bswap16(o_mask);
-        if (flags & TCG_BSWAP_OS) {
-            z_mask = (int16_t)z_mask;
-            o_mask = (int16_t)o_mask;
-            s_mask = INT16_MIN;
-        } else if (!(flags & TCG_BSWAP_OZ)) {
-            z_mask |= MAKE_64BIT_MASK(16, 48);
+    if (flags & TCG_BSWAP_OS) {
+        /* s_mask set */
+    } else {
+        if (!(flags & TCG_BSWAP_OZ)) {
+            z_mask |= s_mask << 1;
         }
-        break;
-    case INDEX_op_bswap32:
-        z_mask = bswap32(z_mask);
-        o_mask = bswap32(o_mask);
-        if (flags & TCG_BSWAP_OS) {
-            z_mask = (int32_t)z_mask;
-            o_mask = (int32_t)o_mask;
-            s_mask = INT32_MIN;
-        } else if (!(flags & TCG_BSWAP_OZ)) {
-            z_mask |= MAKE_64BIT_MASK(32, 32);
-        }
-        break;
-    case INDEX_op_bswap64:
-        z_mask = bswap64(z_mask);
-        o_mask = bswap64(o_mask);
-        break;
-    default:
-        g_assert_not_reached();
+        s_mask = 0;
     }
 
     return fold_masks_zos(ctx, op, z_mask, o_mask, s_mask);
@@ -1670,7 +1704,7 @@ static bool fold_deposit(OptContext *ctx, TCGOp *op)
                                           ti_const_val(t2)));
     }
 
-    width = 8 * tcg_type_size(ctx->type);
+    width = tcg_type_bits(ctx->type);
     type_mask = MAKE_64BIT_MASK(0, width);
     len_mask = MAKE_64BIT_MASK(0, len);
 
@@ -2072,6 +2106,68 @@ static bool fold_extu(OptContext *ctx, TCGOp *op)
     return fold_masks_zo(ctx, op, z_mask, o_mask);
 }
 
+static bool fold_shift(OptContext *ctx, TCGOp *op);
+static bool fold_lea(OptContext *ctx, TCGOp *op)
+{
+    TCGArg sh = op->args[3];
+    TCGArg imm = op->args[4];
+    int var_mask = 0;
+
+    if (arg_is_const(op->args[1])) {
+        imm += arg_const_val(op->args[1]);
+    } else {
+        var_mask |= 1;
+    }
+    if (arg_is_const(op->args[2])) {
+        imm += arg_const_val(op->args[2]) << sh;
+    } else {
+        var_mask |= 2;
+    }
+
+    switch (var_mask) {
+    case 0:
+        return tcg_opt_gen_movi(ctx, op, op->args[0], imm);
+
+    case 1:
+        if (imm == 0) {
+            return tcg_opt_gen_mov(ctx, op, op->args[0], op->args[1]);
+        }
+        op->opc = INDEX_op_add;
+        op->args[2] = arg_new_constant(ctx, imm);
+        break;
+
+    case 2:
+        if (sh == 0) {
+            if (imm == 0) {
+                return tcg_opt_gen_mov(ctx, op, op->args[0], op->args[2]);
+            }
+            op->opc = INDEX_op_add;
+            op->args[1] = op->args[2];
+            op->args[2] = arg_new_constant(ctx, imm);
+            break;
+        }
+        if (imm == 0) {
+            op->opc = INDEX_op_shl;
+            op->args[1] = op->args[2];
+            op->args[2] = arg_new_constant(ctx, sh);
+            return fold_shift(ctx, op);
+        }
+
+        /* If arg1 was not already 0, fold the immediates. */
+        if (arg_const_val(op->args[1]) != 0) {
+            if (TCG_TARGET_lea_imm_valid(ctx->type, imm)) {
+                op->args[1] = arg_new_constant(ctx, 0);
+                op->args[4] = imm;
+            } else {
+                op->args[1] = arg_new_constant(ctx, imm);
+                op->args[4] = 0;
+            }
+        }
+        break;
+    }
+    return finish_folding(ctx, op);
+}
+
 static bool fold_mb(OptContext *ctx, TCGOp *op)
 {
     /* Eliminate duplicate and redundant fence instructions.  */
@@ -2094,6 +2190,16 @@ static bool fold_mb(OptContext *ctx, TCGOp *op)
         ctx->prev_mb = op;
     }
     return true;
+}
+
+static bool fold_minmax(OptContext *ctx, TCGOp *op, uint64_t bound)
+{
+    if (fold_const2_commutative(ctx, op) ||
+        fold_xi_to_i(ctx, op, bound) ||
+        fold_xx_to_x(ctx, op)) {
+        return true;
+    }
+    return finish_folding(ctx, op);
 }
 
 static bool fold_mov(OptContext *ctx, TCGOp *op)
@@ -2174,7 +2280,6 @@ static bool fold_mul_highpart(OptContext *ctx, TCGOp *op)
     return finish_folding(ctx, op);
 }
 
-static bool fold_shift(OptContext *ctx, TCGOp *op);
 static bool fold_multiply2(OptContext *ctx, TCGOp *op)
 {
     swap_commutative(op->args[0], &op->args[2], &op->args[3]);
@@ -2235,7 +2340,7 @@ static bool fold_multiply2(OptContext *ctx, TCGOp *op)
                 op->args[0] = rh;
                 op->args[1] = rl;
                 op->args[2] =
-                    arg_new_constant(ctx, tcg_type_size(ctx->type) * 8 - 1);
+                    arg_new_constant(ctx, tcg_type_bits(ctx->type) - 1);
                 return fold_shift(ctx, op);
             default:
                 break;
@@ -3115,6 +3220,9 @@ void tcg_optimize(TCGContext *s)
         case INDEX_op_bswap16:
         case INDEX_op_bswap32:
         case INDEX_op_bswap64:
+        case INDEX_op_revbit8:
+        case INDEX_op_revbit32:
+        case INDEX_op_revbit64:
             done = fold_bswap(&ctx, op);
             break;
         case INDEX_op_clz:
@@ -3172,6 +3280,9 @@ void tcg_optimize(TCGContext *s)
         case INDEX_op_st:
         case INDEX_op_st_vec:
             done = fold_tcg_st_memcopy(&ctx, op);
+            break;
+        case INDEX_op_lea:
+            done = fold_lea(&ctx, op);
             break;
         case INDEX_op_mb:
             done = fold_mb(&ctx, op);
@@ -3256,6 +3367,14 @@ void tcg_optimize(TCGContext *s)
         case INDEX_op_sextract:
             done = fold_sextract(&ctx, op);
             break;
+        case INDEX_op_smax:
+            done = fold_minmax(&ctx, op, (ctx.type == TCG_TYPE_I32
+                                          ? INT32_MAX : INT64_MAX));
+            break;
+        case INDEX_op_smin:
+            done = fold_minmax(&ctx, op, (ctx.type == TCG_TYPE_I32
+                                          ? INT32_MIN : INT64_MIN));
+            break;
         case INDEX_op_sub:
             done = fold_sub(&ctx, op);
             break;
@@ -3270,6 +3389,16 @@ void tcg_optimize(TCGContext *s)
             break;
         case INDEX_op_sub_vec:
             done = fold_sub_vec(&ctx, op);
+            break;
+        case INDEX_op_umax:
+            /*
+             * Note that 32-bit constants are stored sign extended,
+             * so (int32_t)UINT32_MAX == -1.
+             */
+            done = fold_minmax(&ctx, op, -1);
+            break;
+        case INDEX_op_umin:
+            done = fold_minmax(&ctx, op, 0);
             break;
         case INDEX_op_xor:
         case INDEX_op_xor_vec:

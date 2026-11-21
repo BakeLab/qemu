@@ -1207,6 +1207,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     AcpiTable table = { .sig = "DSDT", .rev = 2, .oem_id = vms->oem_id,
                         .oem_table_id = vms->oem_table_id };
     Aml *pci0_scope;
+    uint32_t bsel;
 
     acpi_table_begin(&table, table_data);
     dsdt = init_aml_allocator();
@@ -1269,7 +1270,9 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
 
     aml_append(pci0_scope, build_pci_bridge_edsm());
     build_append_pci_bus_devices(pci0_scope, vms->bus);
-    if (object_property_find(OBJECT(vms->bus), ACPI_PCIHP_PROP_BSEL)) {
+    bsel = object_property_get_uint(OBJECT(vms->bus), ACPI_PCIHP_PROP_BSEL,
+                                    &error_abort);
+    if (bsel != UINT32_MAX) {
         build_append_pcihp_slots(pci0_scope, vms->bus);
     }
 
@@ -1403,7 +1406,7 @@ void virt_acpi_build(VirtMachineState *vms, AcpiBuildTables *tables)
     acpi_add_table(table_offsets, tables_blob);
     build_dbg2(tables_blob, tables->linker, vms);
 
-    if (vms->ras) {
+    if (vms->ras && vms->acpi_dev) {
         AcpiGedState *acpi_ged_state;
         static const AcpiNotificationSourceId *notify;
         unsigned int notify_sz;
@@ -1411,21 +1414,20 @@ void virt_acpi_build(VirtMachineState *vms, AcpiBuildTables *tables)
 
         acpi_ged_state = ACPI_GED(vms->acpi_dev);
         ags = &acpi_ged_state->ghes_state;
-        if (ags) {
-            acpi_add_table(table_offsets, tables_blob);
 
-            if (!ags->use_hest_addr) {
-                notify = hest_ghes_notify_10_0;
-                notify_sz = ARRAY_SIZE(hest_ghes_notify_10_0);
-            } else {
-                notify = hest_ghes_notify;
-                notify_sz = ARRAY_SIZE(hest_ghes_notify);
-            }
+        acpi_add_table(table_offsets, tables_blob);
 
-            acpi_build_hest(ags, tables_blob, tables->hardware_errors,
-                            tables->linker, notify, notify_sz,
-                            vms->oem_id, vms->oem_table_id);
+        if (!ags->use_hest_addr) {
+            notify = hest_ghes_notify_10_0;
+            notify_sz = ARRAY_SIZE(hest_ghes_notify_10_0);
+        } else {
+            notify = hest_ghes_notify;
+            notify_sz = ARRAY_SIZE(hest_ghes_notify);
         }
+
+        acpi_build_hest(ags, tables_blob, tables->hardware_errors,
+                        tables->linker, notify, notify_sz,
+                        vms->oem_id, vms->oem_table_id);
     }
 
     if (ms->numa_state->num_nodes > 0) {

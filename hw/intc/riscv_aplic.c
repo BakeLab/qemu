@@ -167,7 +167,10 @@ bool riscv_is_kvm_aia_aplic_imsic(bool msimode)
 
 bool riscv_use_emulated_aplic(bool msimode)
 {
-#ifdef CONFIG_KVM
+    if (!kvm_enabled()) {
+        return true;
+    }
+
     if (tcg_enabled()) {
         return true;
     }
@@ -177,21 +180,20 @@ bool riscv_use_emulated_aplic(bool msimode)
     }
 
     return kvm_kernel_irqchip_split();
-#else
-    return true;
-#endif
 }
 
 void riscv_aplic_set_kvm_msicfgaddr(RISCVAPLICState *aplic, hwaddr addr)
 {
-#ifdef CONFIG_KVM
+    if (!kvm_enabled()) {
+        return;
+    }
+
     if (riscv_use_emulated_aplic(aplic->msimode)) {
         addr >>= APLIC_xMSICFGADDR_PPN_SHIFT;
         aplic->kvm_msicfgaddr = extract64(addr, 0, 32);
         aplic->kvm_msicfgaddrH = extract64(addr, 32, 32) &
                                  APLIC_MMSICFGADDRH_VALID_MASK;
     }
-#endif
 }
 
 /*
@@ -952,6 +954,32 @@ static void riscv_aplic_realize(DeviceState *dev, Error **errp)
     uint32_t i;
     RISCVAPLICState *aplic = RISCV_APLIC(dev);
 
+    if (aplic->num_harts >= APLIC_MAX_IDC) {
+        error_setg(errp, "num-harts must be less than %d", (int)APLIC_MAX_IDC);
+        return;
+    }
+    if ((APLIC_IDC_BASE + (aplic->num_harts * APLIC_IDC_SIZE)) >
+        aplic->aperture_size) {
+        error_setg(errp, "aperture-size 0x%x too small for num-harts %d",
+                   aplic->aperture_size, aplic->num_harts);
+        return;
+    }
+    if (aplic->num_irqs > APLIC_MAX_SOURCE) {
+        error_setg(errp, "num-irqs must be less than or equal to %d",
+                   APLIC_MAX_SOURCE);
+        return;
+    }
+    if (!is_power_of_2(aplic->iprio_mask + 1)) {
+        error_setg(errp, "iprio-mask must have all lower bits set");
+        return;
+    }
+    if (aplic->iprio_mask < ((1U << APLIC_MIN_IPRIO_BITS) - 1) ||
+        aplic->iprio_mask > ((1U << APLIC_MAX_IPRIO_BITS) - 1)) {
+        error_setg(errp, "iprio-mask must specify between %d and %d bits of "
+                   "priority", APLIC_MIN_IPRIO_BITS, APLIC_MAX_IPRIO_BITS);
+        return;
+    }
+
     if (riscv_use_emulated_aplic(aplic->msimode)) {
         /* Create output IRQ lines for non-MSI mode */
         if (!aplic->msimode) {
@@ -1109,18 +1137,13 @@ void riscv_aplic_add_child(DeviceState *parent, DeviceState *child)
 /*
  * Create APLIC device.
  */
-DeviceState *riscv_aplic_create(hwaddr addr, hwaddr size,
-    uint32_t hartid_base, uint32_t num_harts, uint32_t num_sources,
-    uint32_t iprio_bits, bool msimode, bool mmode, DeviceState *parent)
+DeviceState *riscv_aplic_create(MemoryRegion *container,
+    hwaddr addr, hwaddr size, uint32_t hartid_base, uint32_t num_harts,
+    uint32_t num_sources, uint32_t iprio_bits, bool msimode, bool mmode,
+    DeviceState *parent)
 {
     DeviceState *dev = qdev_new(TYPE_RISCV_APLIC);
     uint32_t i;
-
-    assert(num_harts < APLIC_MAX_IDC);
-    assert((APLIC_IDC_BASE + (num_harts * APLIC_IDC_SIZE)) <= size);
-    assert(num_sources < APLIC_MAX_SOURCE);
-    assert(APLIC_MIN_IPRIO_BITS <= iprio_bits);
-    assert(iprio_bits <= APLIC_MAX_IPRIO_BITS);
 
     qdev_prop_set_uint32(dev, "aperture-size", size);
     qdev_prop_set_uint32(dev, "hartid-base", hartid_base);
@@ -1137,7 +1160,8 @@ DeviceState *riscv_aplic_create(hwaddr addr, hwaddr size,
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
     if (riscv_use_emulated_aplic(msimode)) {
-        sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, addr);
+        memory_region_add_subregion(container, addr,
+            sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 0));
 
         if (!msimode) {
             for (i = 0; i < num_harts; i++) {

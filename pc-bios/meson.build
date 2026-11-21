@@ -1,39 +1,19 @@
 roms = []
 if unpack_edk2_blobs
-  # Install firmware only for the system targets that survived accelerator
-  # selection. Keep descriptors with their blobs so they cannot dangle.
   fds = []
   firmware_descriptors = []
-  if 'aarch64-softmmu' in target_dirs
-    fds += ['edk2-aarch64-code.fd']
-    firmware_descriptors += ['60-edk2-aarch64.json']
-  endif
-  if 'arm-softmmu' in target_dirs
-    fds += ['edk2-arm-code.fd']
-    firmware_descriptors += ['60-edk2-arm.json']
-  endif
-  if 'aarch64-softmmu' in target_dirs or 'arm-softmmu' in target_dirs
-    fds += ['edk2-arm-vars.fd']
-  endif
-  if 'i386-softmmu' in target_dirs
-    fds += ['edk2-i386-code.fd', 'edk2-i386-secure-code.fd']
-    firmware_descriptors += ['60-edk2-i386.json', '50-edk2-i386-secure.json']
-  endif
-  if 'x86_64-softmmu' in target_dirs
-    fds += ['edk2-x86_64-code.fd', 'edk2-x86_64-secure-code.fd']
-    firmware_descriptors += ['60-edk2-x86_64.json', '50-edk2-x86_64-secure.json']
-  endif
-  if 'i386-softmmu' in target_dirs or 'x86_64-softmmu' in target_dirs
-    fds += ['edk2-i386-vars.fd']
-  endif
-  if 'riscv64-softmmu' in target_dirs
-    fds += ['edk2-riscv-code.fd', 'edk2-riscv-vars.fd']
-    firmware_descriptors += ['60-edk2-riscv64.json']
-  endif
-  if 'loongarch64-softmmu' in target_dirs
-    fds += ['edk2-loongarch64-code.fd', 'edk2-loongarch64-vars.fd']
-    firmware_descriptors += ['60-edk2-loongarch64.json']
-  endif
+  foreach arch : ['aarch64', 'riscv64', 'loongarch64', 'x86_64']
+    if arch + '-softmmu' in target_dirs
+      fds += ['edk2-' + arch + '-code.fd']
+      firmware_descriptors += ['60-edk2-' + arch + '.json']
+      if arch == 'x86_64'
+        fds += ['edk2-x86_64-secure-code.fd', 'edk2-i386-vars.fd']
+        firmware_descriptors += ['50-edk2-x86_64-secure.json']
+      else
+        fds += ['edk2-' + arch + '-vars.fd']
+      endif
+    endif
+  endforeach
 
   foreach f : fds
     roms += custom_target(f,
@@ -97,6 +77,17 @@ blobs = [
   'edk2-licenses.txt',
   'hppa-firmware.img',
   'hppa-firmware64.img',
+  'hexagon_booter_qcs6490_cdsp',
+  'hexagon_loadlinux_qcs6490_cdsp',
+  'hexagon_booter_sm8975_nsp',
+  'hexagon_loadlinux_sm8975_nsp',
+  'hexagon_booter_sa8775p_cdsp',
+  'hexagon_loadlinux_sa8775p_cdsp',
+  'hexagon_booter_sc8480xp_nsp0',
+  'hexagon_loadlinux_sc8480xp_nsp0',
+  'hexagon_booter_sa8797p_nsp0',
+  'hexagon_loadlinux_sa8797p_nsp0',
+  'hexagon-hypervisor-license.txt',
   'npcm7xx_bootrom.bin',
   'npcm8xx_bootrom.bin',
   'vof.bin',

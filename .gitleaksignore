@@ -1,0 +1,3 @@
+# Fixed AES-128 test-vector keys in upstream QEMU cipher tests, not credentials.
+69ddeb2fac7454daa6b5cd896cc91df96566ee25:tests/unit/test-crypto-cipher.c:generic-api-key:847
+69ddeb2fac7454daa6b5cd896cc91df96566ee25:tests/unit/test-crypto-cipher.c:generic-api-key:865
