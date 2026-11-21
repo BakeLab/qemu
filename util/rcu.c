@@ -328,6 +328,11 @@ static void *call_rcu_thread(void *opaque)
     abort();
 }
 
+void g_free_rcu_callback(struct rcu_head *head)
+{
+    g_free(head);
+}
+
 void call_rcu1(struct rcu_head *node, void (*func)(struct rcu_head *node))
 {
     node->func = func;
