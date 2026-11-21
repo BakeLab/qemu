@@ -540,11 +540,8 @@ of arguments.
 C standard, implementation defined and undefined behaviors
 ==========================================================
 
-C code in QEMU should be written to the C11 language specification. A
-copy of the final version of the C11 standard formatted as a draft,
-can be downloaded from:
-
-    `<http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1548.pdf>`_
+The Breadboard trim fork builds QEMU with GNU C23. Host C compilers
+must support the GNU dialect of ISO C23.
 
 The C language specification defines regions of undefined behavior and
 implementation defined behavior (to give compiler authors enough leeway to

@@ -1,5 +1,5 @@
 project('qemu', ['c'], meson_version: '>=1.6.0',
-        default_options: ['warning_level=1', 'c_std=gnu11', 'cpp_std=gnu++23', 'b_colorout=auto',
+        default_options: ['warning_level=1', 'c_std=gnu23', 'cpp_std=gnu++23', 'b_colorout=auto',
                           'b_staticpic=false', 'stdsplit=false', 'optimization=2', 'b_pie=true'] +
 
                           # build.rust_std breaks with older meson, but Rust does not
