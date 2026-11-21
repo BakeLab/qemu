@@ -1,10 +1,9 @@
 QEMU NBD protocol support
 =========================
 
-QEMU supports the NBD protocol, and has an internal NBD client (see
-``block/nbd.c``), an internal NBD server (see ``blockdev-nbd.c``), and an
-external NBD server tool (see ``qemu-nbd.c``). The common code is placed
-in ``nbd/*``.
+The Breadboard trim build supports NBD exports via the internal server and
+``qemu-nbd``. Its block layer does not open NBD URLs. The standalone tool
+requires newstyle negotiation when connecting to a server.
 
 The NBD protocol is specified here:
 https://github.com/NetworkBlockDevice/nbd/blob/master/doc/proto.md

@@ -28,7 +28,6 @@
 
 typedef struct NBDExport NBDExport;
 typedef struct NBDClient NBDClient;
-typedef struct NBDClientConnection NBDClientConnection;
 typedef struct NBDMetaContexts NBDMetaContexts;
 
 extern const BlockExportDriver blk_exp_nbd;
@@ -488,22 +487,5 @@ const char *nbd_info_lookup(uint16_t info);
 const char *nbd_cmd_lookup(uint16_t info);
 const char *nbd_err_lookup(int err);
 const char *nbd_mode_lookup(NBDMode mode);
-
-/* nbd/client-connection.c */
-void nbd_client_connection_enable_retry(NBDClientConnection *conn);
-
-NBDClientConnection *nbd_client_connection_new(const SocketAddress *saddr,
-                                               bool do_negotiation,
-                                               const char *export_name,
-                                               const char *x_dirty_bitmap,
-                                               QCryptoTLSCreds *tlscreds,
-                                               const char *tlshostname);
-void nbd_client_connection_release(NBDClientConnection *conn);
-
-QIOChannel *coroutine_fn
-nbd_co_establish_connection(NBDClientConnection *conn, NBDExportInfo *info,
-                            bool blocking, Error **errp);
-
-void nbd_co_establish_connection_cancel(NBDClientConnection *conn);
 
 #endif
