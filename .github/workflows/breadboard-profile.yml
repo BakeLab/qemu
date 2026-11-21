@@ -20,11 +20,20 @@ jobs:
       matrix:
         include:
           - arch: x86_64
+            cc: clang
+            cxx: clang++
             github_runner: ubuntu-24.04
             bb_runner: x64
           - arch: aarch64
+            cc: clang
+            cxx: clang++
             github_runner: ubuntu-24.04-arm
             bb_runner: arm64
+          - arch: x86_64
+            cc: gcc
+            cxx: g++
+            github_runner: ubuntu-24.04
+            bb_runner: x64
     runs-on: ${{ github.server_url == 'https://github.com' && matrix.github_runner || matrix.bb_runner }}
     timeout-minutes: 60
     steps:
@@ -54,12 +63,15 @@ jobs:
             libglib2.0-dev zlib1g-dev libfdt-dev liburing-dev \
             libusb-1.0-0-dev libnuma-dev libseccomp-dev libzstd-dev
       - name: Configure native Breadboard device profile
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
         run: |
           mkdir build
           cd build
           # Exercise the defaults used by BB's pinned-fork build, not explicit
           # --disable flags that could conceal a regression in those defaults.
-          CC=clang CXX=clang++ ../configure \
+          ../configure \
             --target-list=${{ matrix.arch }}-softmmu \
             --without-default-devices --with-devices-${{ matrix.arch }}=breadboard \
             --enable-seccomp --enable-zstd --enable-kvm --enable-linux-io-uring --enable-libusb --enable-numa \
