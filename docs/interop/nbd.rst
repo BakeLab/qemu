@@ -3,7 +3,7 @@ QEMU NBD protocol support
 
 The Breadboard trim build supports NBD exports via the internal server and
 ``qemu-nbd``. Its block layer does not open NBD URLs. The standalone tool
-requires newstyle negotiation when connecting to a server.
+requires fixed newstyle negotiation when connecting to a server.
 
 The NBD protocol is specified here:
 https://github.com/NetworkBlockDevice/nbd/blob/master/doc/proto.md
