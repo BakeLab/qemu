@@ -934,17 +934,17 @@ static int nbd_start_negotiate(QIOChannel *ioc, QCryptoTLSCreds *tlscreds,
     trace_nbd_receive_negotiate_magic(magic);
 
     if (magic == NBD_OPTS_MAGIC) {
-        uint32_t clientflags = 0;
+        uint32_t clientflags = NBD_FLAG_C_FIXED_NEWSTYLE;
         uint16_t globalflags;
-        bool fixedNewStyle = false;
+        int result;
 
         if (nbd_read16(ioc, &globalflags, "server flags", errp) < 0) {
             return -EINVAL;
         }
         trace_nbd_receive_negotiate_server_flags(globalflags);
-        if (globalflags & NBD_FLAG_FIXED_NEWSTYLE) {
-            fixedNewStyle = true;
-            clientflags |= NBD_FLAG_C_FIXED_NEWSTYLE;
+        if (!(globalflags & NBD_FLAG_FIXED_NEWSTYLE)) {
+            error_setg(errp, "Server does not support fixed newstyle NBD");
+            return -EINVAL;
         }
         if (globalflags & NBD_FLAG_NO_ZEROES) {
             if (zeroes) {
@@ -959,40 +959,29 @@ static int nbd_start_negotiate(QIOChannel *ioc, QCryptoTLSCreds *tlscreds,
             return -EINVAL;
         }
         if (tlscreds) {
-            if (fixedNewStyle) {
-                *outioc = nbd_receive_starttls(ioc, tlscreds, hostname, errp);
-                if (!*outioc) {
-                    return -EINVAL;
-                }
-                ioc = *outioc;
-            } else {
-                error_setg(errp, "Server does not support STARTTLS");
+            *outioc = nbd_receive_starttls(ioc, tlscreds, hostname, errp);
+            if (!*outioc) {
                 return -EINVAL;
             }
+            ioc = *outioc;
         }
-        if (fixedNewStyle) {
-            int result = 0;
-
-            if (max_mode >= NBD_MODE_EXTENDED) {
-                result = nbd_request_simple_option(ioc,
-                                                   NBD_OPT_EXTENDED_HEADERS,
-                                                   false, errp);
-                if (result) {
-                    return result < 0 ? -EINVAL : NBD_MODE_EXTENDED;
-                }
+        if (max_mode >= NBD_MODE_EXTENDED) {
+            result = nbd_request_simple_option(ioc,
+                                               NBD_OPT_EXTENDED_HEADERS,
+                                               false, errp);
+            if (result) {
+                return result < 0 ? -EINVAL : NBD_MODE_EXTENDED;
             }
-            if (max_mode >= NBD_MODE_STRUCTURED) {
-                result = nbd_request_simple_option(ioc,
-                                                   NBD_OPT_STRUCTURED_REPLY,
-                                                   false, errp);
-                if (result) {
-                    return result < 0 ? -EINVAL : NBD_MODE_STRUCTURED;
-                }
-            }
-            return NBD_MODE_SIMPLE;
-        } else {
-            return NBD_MODE_EXPORT_NAME;
         }
+        if (max_mode >= NBD_MODE_STRUCTURED) {
+            result = nbd_request_simple_option(ioc,
+                                               NBD_OPT_STRUCTURED_REPLY,
+                                               false, errp);
+            if (result) {
+                return result < 0 ? -EINVAL : NBD_MODE_STRUCTURED;
+            }
+        }
+        return NBD_MODE_SIMPLE;
     } else if (magic == NBD_CLIENT_MAGIC) {
         error_setg(errp, "Oldstyle NBD negotiation is unsupported");
         return -EINVAL;
@@ -1065,8 +1054,6 @@ int nbd_receive_negotiate(QIOChannel *ioc, QCryptoTLSCreds *tlscreds,
         if (nbd_receive_query_exports(ioc, info->name, errp) < 0) {
             return -EINVAL;
         }
-        /* fall through */
-    case NBD_MODE_EXPORT_NAME:
         /* write the export name request */
         if (nbd_send_option_request(ioc, NBD_OPT_EXPORT_NAME, -1, info->name,
                                     errp) < 0) {
@@ -1192,10 +1179,6 @@ int nbd_receive_export_list(QIOChannel *ioc, QCryptoTLSCreds *tlscreds,
         /* Send NBD_OPT_ABORT as a courtesy before hanging up */
         nbd_send_opt_abort(ioc);
         break;
-    case NBD_MODE_EXPORT_NAME:
-        error_setg(errp, "Server does not support export lists");
-        /* We can't even send NBD_OPT_ABORT, so merely hang up */
-        goto out;
     default:
         g_assert_not_reached();
     }
