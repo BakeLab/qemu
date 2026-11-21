@@ -19,7 +19,6 @@ block_ss.add(files(
   'graph-lock.c',
   'io.c',
   'mirror.c',
-  'nbd.c',
   'null.c',
   'preallocate.c',
   'progress_meter.c',

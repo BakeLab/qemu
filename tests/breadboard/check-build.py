@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check a real native Linux build; does not boot or simulate a guest."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -33,6 +34,10 @@ assert 'libglib-2.0' in libraries and 'libseccomp' in libraries, libraries
 
 # Keep the actual unencrypted qcow2/zstd path used by Breadboard functional.
 img = str(build / 'qemu-img')
+for protocol in ('nbd', 'nbd+tcp', 'nbd+unix'):
+    probe = subprocess.run([img, 'info', f'{protocol}://localhost/disk'],
+                           capture_output=True, text=True, env={**os.environ, 'LC_ALL': 'C'})
+    assert probe.returncode and 'Unknown protocol' in probe.stderr, probe.stderr
 with tempfile.TemporaryDirectory() as temp:
     raw = Path(temp) / 'source.raw'
     qcow = Path(temp) / 'compressed.qcow2'
