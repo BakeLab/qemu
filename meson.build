@@ -780,12 +780,18 @@ endif
 
 # Diagnose buffer, lifetime and callback type mistakes in C translation units.
 c_diagnostics = [
+  '-Walloc-zero',
+  '-Warray-bounds-pointer-arithmetic',
   '-Warray-bounds=2',
+  '-Warray-parameter=2',
   '-Wcast-function-type-strict',
   '-Wformat-truncation=2',
+  '-Wnull-dereference',
   '-Wsizeof-pointer-div',
+  '-Wsizeof-pointer-memaccess',
   '-Wstringop-overread',
   '-Wuse-after-free=2',
+  '-Wvla-parameter',
 ]
 
 add_project_arguments(cc.get_supported_arguments(qemu_common_flags + qemu_cflags + warn_flags + c_diagnostics),
