@@ -155,13 +155,15 @@ void drain_call_rcu(void);
       }),                                                                \
       (RCUCBFunc *)(func))
 
+void g_free_rcu_callback(struct rcu_head *head);
+
 #define g_free_rcu(obj, field) \
     call_rcu1(({                                                         \
         char __attribute__((unused))                                     \
             offset_must_be_zero[-offsetof(typeof(*(obj)), field)];       \
         &(obj)->field;                                                   \
       }),                                                                \
-      (RCUCBFunc *)g_free);
+      g_free_rcu_callback);
 
 typedef void RCUReadAuto;
 static inline RCUReadAuto *rcu_read_auto_lock(void)
