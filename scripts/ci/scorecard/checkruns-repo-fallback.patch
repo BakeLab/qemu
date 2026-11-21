@@ -1,0 +1,88 @@
+diff --git a/clients/githubrepo/checkruns.go b/clients/githubrepo/checkruns.go
+index ba00718..553b408 100644
+--- a/clients/githubrepo/checkruns.go
++++ b/clients/githubrepo/checkruns.go
+@@ -113,7 +113,11 @@ func (handler *checkrunsHandler) setup() error {
+ 		if err := handler.graphClient.Query(handler.ctx, handler.checkData, vars); err != nil {
+ 			// quit early without setting crsErrSetup for "Resource not accessible by integration" error
+ 			// for whatever reason, this check doesn't work with a GITHUB_TOKEN, only a PAT
+-			if strings.Contains(err.Error(), "Resource not accessible by integration") {
++			// Associated PRs may belong to an unrelated organization whose IP policy
++			// rejects this prefetch. Query this repository through REST instead.
++			if strings.Contains(err.Error(), "Resource not accessible by integration") ||
++				(strings.Contains(err.Error(), "organization has an IP allow list enabled") &&
++					strings.Contains(err.Error(), "your IP address is not permitted to access this resource")) {
+ 				return
+ 			}
+ 			handler.errSetup = err
+diff --git a/clients/githubrepo/checkruns_test.go b/clients/githubrepo/checkruns_test.go
+index d8460f5..f543b8a 100644
+--- a/clients/githubrepo/checkruns_test.go
++++ b/clients/githubrepo/checkruns_test.go
+@@ -15,6 +15,12 @@
+ package githubrepo
+ 
+ import (
++	"fmt"
++	"github.com/google/go-github/v82/github"
++	"github.com/shurcooL/githubv4"
++	"net/http"
++	"net/http/httptest"
++	"net/url"
+ 	"testing"
+ 
+ 	sce "github.com/ossf/scorecard/v5/errors"
+@@ -28,3 +34,53 @@ func Test_init_clearsErr(t *testing.T) {
+ 		t.Errorf("expected nil error, got %v", handler.errSetup)
+ 	}
+ }
++
++func TestCheckRunsIPPolicyFallback(t *testing.T) {
++	for _, tc := range []struct {
++		name       string
++		graphError string
++		restStatus int
++		wantError  bool
++		wantREST   bool
++	}{
++		{"restricted prefetch", "the unrelated organization has an IP allow list enabled, and your IP address is not permitted to access this resource", 200, false, true},
++		{"restricted REST", "the unrelated organization has an IP allow list enabled, and your IP address is not permitted to access this resource", 403, true, true},
++		{"other failure", "upstream unavailable", 200, true, false},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			restCalls := 0
++			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				w.Header().Set("Content-Type", "application/json")
++				if r.URL.Path == "/graphql" {
++					fmt.Fprintf(w, `{"errors":[{"message":%q}]}`, tc.graphError)
++					return
++				}
++				restCalls++
++				if r.URL.Path != "/repos/local/project/commits/main/check-runs" {
++					t.Errorf("unexpected API path: %s", r.URL.Path)
++				}
++				w.WriteHeader(tc.restStatus)
++				if tc.restStatus != 200 {
++					fmt.Fprint(w, `{"message":"forbidden"}`)
++					return
++				}
++				fmt.Fprint(w, `{"total_count":1,"check_runs":[{"status":"completed","conclusion":"success","app":{"slug":"local-ci"}}]}`)
++			}))
++			defer server.Close()
++			client := github.NewClient(server.Client())
++			client.BaseURL, _ = url.Parse(server.URL + "/")
++			handler := &checkrunsHandler{client: client, graphClient: githubv4.NewEnterpriseClient(server.URL+"/graphql", server.Client())}
++			handler.init(t.Context(), &Repo{owner: "local", repo: "project", commitSHA: "main"}, 20)
++			runs, err := handler.listCheckRunsForRef("main")
++			if (err != nil) != tc.wantError {
++				t.Fatalf("error=%v wantError=%v", err, tc.wantError)
++			}
++			if (restCalls > 0) != tc.wantREST {
++				t.Fatalf("REST calls=%d", restCalls)
++			}
++			if !tc.wantError && (len(runs) != 1 || runs[0].App.Slug != "local-ci") {
++				t.Fatalf("unexpected results: %v", runs)
++			}
++		})
++	}
++}
