@@ -1,5 +1,5 @@
 project('qemu', ['c'], meson_version: '>=1.6.0',
-        default_options: ['warning_level=1', 'c_std=gnu11', 'cpp_std=gnu++23', 'b_colorout=auto',
+        default_options: ['warning_level=1', 'c_std=gnu23', 'cpp_std=gnu++23', 'b_colorout=auto',
                           'b_staticpic=false', 'stdsplit=false', 'optimization=2', 'b_pie=true'] +
 
                           # build.rust_std breaks with older meson, but Rust does not
@@ -778,7 +778,17 @@ if 'cpp' in all_languages
   qemu_cxxflags = ['-D__STDC_LIMIT_MACROS', '-D__STDC_CONSTANT_MACROS', '-D__STDC_FORMAT_MACROS'] + qemu_cflags
 endif
 
-add_project_arguments(cc.get_supported_arguments(qemu_common_flags + qemu_cflags + warn_flags),
+# Diagnose buffer, lifetime and callback type mistakes in C translation units.
+c_diagnostics = [
+  '-Warray-bounds=2',
+  '-Wcast-function-type-strict',
+  '-Wformat-truncation=2',
+  '-Wsizeof-pointer-div',
+  '-Wstringop-overread',
+  '-Wuse-after-free=2',
+]
+
+add_project_arguments(cc.get_supported_arguments(qemu_common_flags + qemu_cflags + warn_flags + c_diagnostics),
                       native: false, language: 'c')
 add_global_link_arguments(qemu_ldflags, native: false, language: all_languages)
 if have_rust
