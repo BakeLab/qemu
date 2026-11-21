@@ -1,13 +1,21 @@
 rules:
   - id: qemu-unbounded-format
-    languages: [c]
+    languages: [generic]
+    paths:
+      include: ["*.c", "*.h"]
+    options:
+      generic_comment_style: c
     severity: ERROR
     message: Use a bounded formatting function and check the destination capacity.
     pattern-either:
       - pattern: sprintf(...)
       - pattern: vsprintf(...)
   - id: qemu-shell-command
-    languages: [c]
+    languages: [generic]
+    paths:
+      include: ["*.c", "*.h"]
+    options:
+      generic_comment_style: c
     severity: ERROR
     message: Keep shell command execution out of device and block backends.
     pattern-either:
