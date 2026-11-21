@@ -994,41 +994,12 @@ static int nbd_start_negotiate(QIOChannel *ioc, QCryptoTLSCreds *tlscreds,
             return NBD_MODE_EXPORT_NAME;
         }
     } else if (magic == NBD_CLIENT_MAGIC) {
-        if (tlscreds) {
-            error_setg(errp, "Server does not support STARTTLS");
-            return -EINVAL;
-        }
-        return NBD_MODE_OLDSTYLE;
+        error_setg(errp, "Oldstyle NBD negotiation is unsupported");
+        return -EINVAL;
     } else {
         error_setg(errp, "Bad server magic received: 0x%" PRIx64, magic);
         return -EINVAL;
     }
-}
-
-/*
- * nbd_negotiate_finish_oldstyle:
- * Populate @info with the size and export flags from an oldstyle server,
- * but does not consume 124 bytes of reserved zero padding.
- * Returns 0 on success, -1 with @errp set on failure
- */
-static int nbd_negotiate_finish_oldstyle(QIOChannel *ioc, NBDExportInfo *info,
-                                         Error **errp)
-{
-    uint32_t oldflags;
-
-    if (nbd_read64(ioc, &info->size, "export length", errp) < 0) {
-        return -EINVAL;
-    }
-
-    if (nbd_read32(ioc, &oldflags, "export flags", errp) < 0) {
-        return -EINVAL;
-    }
-    if (oldflags & ~0xffff) {
-        error_setg(errp, "Unexpected export flags %0x" PRIx32, oldflags);
-        return -EINVAL;
-    }
-    info->flags = oldflags;
-    return 0;
 }
 
 /*
@@ -1108,15 +1079,6 @@ int nbd_receive_negotiate(QIOChannel *ioc, QCryptoTLSCreds *tlscreds,
         }
 
         if (nbd_read16(ioc, &info->flags, "export flags", errp) < 0) {
-            return -EINVAL;
-        }
-        break;
-    case NBD_MODE_OLDSTYLE:
-        if (*info->name) {
-            error_setg(errp, "Server does not support non-empty export names");
-            return -EINVAL;
-        }
-        if (nbd_negotiate_finish_oldstyle(ioc, info, errp) < 0) {
             return -EINVAL;
         }
         break;
@@ -1234,25 +1196,6 @@ int nbd_receive_export_list(QIOChannel *ioc, QCryptoTLSCreds *tlscreds,
         error_setg(errp, "Server does not support export lists");
         /* We can't even send NBD_OPT_ABORT, so merely hang up */
         goto out;
-    case NBD_MODE_OLDSTYLE:
-        /* Lone export name is implied, but we can parse length and flags */
-        array = g_new0(NBDExportInfo, 1);
-        array->name = g_strdup("");
-        array->mode = NBD_MODE_OLDSTYLE;
-        count = 1;
-
-        if (nbd_negotiate_finish_oldstyle(ioc, array, errp) < 0) {
-            goto out;
-        }
-
-        /* Send NBD_CMD_DISC as a courtesy to the server, but ignore all
-         * errors now that we have the information we wanted. */
-        if (nbd_drop(ioc, 124, NULL) == 0) {
-            NBDRequest request = { .type = NBD_CMD_DISC, .mode = result };
-
-            nbd_send_request(ioc, &request);
-        }
-        break;
     default:
         g_assert_not_reached();
     }
